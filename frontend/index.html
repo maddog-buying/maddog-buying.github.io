@@ -105,6 +105,21 @@
         <label>數量<input name="qty" type="number" min="1" value="1" inputmode="numeric"></label>
         <label class="span2">物流單<select name="batch"></select></label>
       </div>
+      <div class="field">
+        <span class="field-label">綁定客人</span>
+        <div id="item-emails" class="chips"></div>
+        <div class="picker">
+          <input type="search" id="cust-q" placeholder="搜尋客人名稱或 Email，點選即可綁定" autocomplete="off"
+                 role="combobox" aria-expanded="false" aria-controls="cust-list">
+          <ul id="cust-list" class="picker-list" role="listbox" hidden></ul>
+        </div>
+        <button type="button" class="link-btn" data-action="toggle-new-cust">＋ 新客戶（尚未登入過的客人）</button>
+        <div id="new-cust" class="input-row wrap" hidden>
+          <input id="new-cust-name" placeholder="客戶名稱" autocomplete="off">
+          <input id="new-cust-email" type="email" placeholder="客人的 Gmail" autocomplete="off">
+          <button type="button" class="btn sm primary" data-action="create-cust">新增並綁定</button>
+        </div>
+      </div>
       <div class="grid2">
         <label>貨件編號<input name="id" autocomplete="off" autocapitalize="characters" placeholder="留空自動產生"></label>
         <label>狀態<select name="status" required></select></label>
@@ -116,14 +131,7 @@
           <button type="button" class="btn sm" data-action="gen-code">產生</button>
         </span>
       </label>
-      <label id="item-new-emails">客人 Email<input name="emails" autocomplete="off" placeholder="客人的 Google 帳號（可用逗號分隔多筆，可留空）"></label>
       <div id="item-extra" hidden>
-        <h3>綁定的客人</h3>
-        <div id="item-emails" class="chips"></div>
-        <div class="input-row">
-          <input id="bind-email" type="email" placeholder="輸入 Google 帳號 Email（可用逗號分隔多筆）">
-          <button type="button" class="btn sm" data-action="add-email">加入</button>
-        </div>
         <h3>歷程</h3>
         <ol id="item-history" class="timeline"></ol>
       </div>

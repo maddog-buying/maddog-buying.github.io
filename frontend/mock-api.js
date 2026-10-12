@@ -69,6 +69,7 @@ window.MockApi = (() => {
     if (bad.length) throw err(400, 'Email 格式錯誤：' + bad.join(', '));
     list.forEach(email => {
       if (!db.bindings.some(b => b.id === id && b.email === email)) db.bindings.push({ id, email, boundAt: now(), boundBy: u.email });
+      if (!db.users.some(x => x.email === email)) db.users.push({ email, name: '', role: 'user', createdAt: now(), lastLogin: '' });
     });
   }
 
@@ -163,6 +164,16 @@ window.MockApi = (() => {
     unbind: (p, u, db) => { db.bindings = db.bindings.filter(b => !(b.id === normId(p.id) && b.email === normEmail(p.email))); return true; },
 
     listUsers: (p, u, db) => db.users.map(x => ({ ...x, bound: db.bindings.filter(b => b.email === x.email).length })),
+    saveUser: (p, u, db) => {
+      const email = normEmail(p.email);
+      if (!isEmail(email)) throw err(400, 'Email 格式錯誤：' + (p.email || ''));
+      const role = p.role === 'admin' || p.role === 'user' ? p.role : null;
+      if (email === u.email && role === 'user') throw err(400, '不能移除自己的管理者權限');
+      const x = db.users.find(y => y.email === email);
+      if (x) { if ('name' in p) x.name = str(p.name); if (role) x.role = role; }
+      else db.users.push({ email, name: str(p.name), role: role || 'user', createdAt: now(), lastLogin: '' });
+      return { email };
+    },
     setRole: (p, u, db) => {
       const email = normEmail(p.email), role = p.role === 'admin' ? 'admin' : 'user';
       if (!isEmail(email)) throw err(400, 'Email 格式錯誤：' + email);

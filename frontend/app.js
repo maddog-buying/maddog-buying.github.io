@@ -15,6 +15,7 @@ const state = {
   mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
   editingItem: null,  // 正在編輯的貨件編號（null = 新增）
   editingBatch: null, // 正在編輯的物流編號（null = 新增）
+  draftEmails: [],    // 新增貨件時先選好、儲存時才綁定的客人
   loaded: {},         // 各分頁是否已載入過資料
 };
 
@@ -224,8 +225,8 @@ async function loadMine() {
 }
 
 async function loadAdmin() {
-  [state.items, state.batches] = await Promise.all([api('listShipments'), api('listBatches')]);
-  state.loaded.items = state.loaded.batches = true;
+  [state.items, state.batches, state.users] = await Promise.all([api('listShipments'), api('listBatches'), api('listUsers')]);
+  state.loaded.items = state.loaded.batches = state.loaded.users = true;
   const carriers = [...new Set(state.batches.map(b => b.carrier).filter(Boolean))];
   $('#carrier-list').innerHTML = carriers.map(c => `<option value="${esc(c)}">`).join('');
 }
@@ -260,7 +261,9 @@ function relTime(iso) {
 }
 const match = (q, ...fields) => !q || fields.some(f => String(f || '').toLowerCase().includes(q.toLowerCase()));
 const byUpdated = (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '');
-const splitEmails = s => String(s || '').split(/[,，;\s]+/).filter(Boolean);
+const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+const custName = email => (state.users.find(u => u.email === email) || {}).name || '';
+const custShort = email => custName(email) || email;
 
 function statusFilter(model, list) {
   const counts = {};
@@ -379,7 +382,7 @@ function renderBatchItems() {
     <li data-action="edit-item" data-id="${esc(i.id)}">
       <div class="grow">
         <div><strong>${esc(i.product)}</strong> ${qtyTag(i.qty)}</div>
-        <div class="muted small">${esc(i.id)}・${esc(i.emails.join(', ') || '未綁定客人')}</div>
+        <div class="muted small">${esc(i.id)}・${esc(i.emails.map(custShort).join('、') || '未綁定客人')}</div>
       </div>
       ${badge(i.status)}
     </li>`).join('') : '<li class="muted plain">尚無貨件</li>';
@@ -407,7 +410,7 @@ async function saveBatch() {
 function itemRows() {
   return state.items
     .filter(s => (!state.itemsStatus || s.status === state.itemsStatus) &&
-      match(state.itemsQ, s.id, s.product, s.batch, s.note, s.emails.join(' ')))
+      match(state.itemsQ, s.id, s.product, s.batch, s.note, s.emails.join(' '), s.emails.map(custName).join(' ')))
     .sort(byUpdated);
 }
 
@@ -445,7 +448,7 @@ function renderItems() {
           <td class="product-cell" data-label="商品"><strong>${esc(s.product)}</strong> ${qtyTag(s.qty)}</td>
           <td class="ship-id" data-label="編號">${esc(s.id)}</td>
           <td class="ship-id small" data-label="物流單">${esc(s.batch) || '<span class="muted">—</span>'}</td>
-          <td data-label="客人" class="email-cell" title="${esc(s.emails.join('\n'))}">${s.emails.length ? esc(s.emails[0]) + (s.emails.length > 1 ? ` +${s.emails.length - 1}` : '') + (s.pending && s.pending.length ? ' <span class="pending-dot" title="有客人尚未登入過">●</span>' : '') : '<span class="muted">未綁定</span>'}</td>
+          <td data-label="客人" class="email-cell" title="${esc(s.emails.map(e => custName(e) ? custName(e) + ' ' + e : e).join('\n'))}">${s.emails.length ? esc(custShort(s.emails[0])) + (s.emails.length > 1 ? ` +${s.emails.length - 1}` : '') + (s.pending && s.pending.length ? ' <span class="pending-dot" title="有客人尚未登入過">●</span>' : '') : '<span class="muted">未綁定</span>'}</td>
           <td data-label="狀態">${badge(s.status)}</td>
           <td data-label="更新" class="muted nowrap" title="${esc(s.updatedBy)}">${esc(fmtTime(s.updatedAt))}</td>
         </tr>`).join('')}
@@ -485,11 +488,15 @@ function openItem(id, preset = {}) {
   setStatus(f.status, s ? s.status : (preset.status || (batch && batch.status)));
   f.note.value = s ? s.note : '';
   f.bindCode.value = s ? s.bindCode : genCode();
-  $('#item-new-emails').hidden = !!s;
+  state.draftEmails = [];
+  $('#cust-q').value = '';
+  $('#new-cust').hidden = true;
+  renderPicker(false);
+  renderEmails();
   $('#item-extra').hidden = !s;
   $('#btn-delete-item').hidden = !s;
   $('#btn-save-next').hidden = !!s;
-  if (s) { renderEmails(s); loadHistory(s.id); }
+  if (s) loadHistory(s.id);
   if (!dlg.open) dlg.showModal();
   (s ? f.status : f.product).focus();
 }
@@ -502,13 +509,97 @@ $('#form-item').batch.addEventListener('change', e => {
 });
 
 const PENDING_TIP = '這個 Email 還沒登入過。客人用此 Gmail 登入後就會看到貨件；若客人說已登入卻看不到，請檢查 Email 是否打錯';
-const pendingTag = (s, e) => (s.pending || []).includes(e) ? `<span class="pending" title="${PENDING_TIP}">尚未登入過</span>` : '';
+const PENDING_TAG = `<span class="pending" title="${PENDING_TIP}">尚未登入過</span>`;
 
-function renderEmails(s) {
-  $('#item-emails').innerHTML = s.emails.length
-    ? s.emails.map(e => `<span class="chip">${esc(e)}${pendingTag(s, e)}<button type="button" data-action="remove-email" data-email="${esc(e)}" aria-label="移除 ${esc(e)}">✕</button></span>`).join('')
-    : '<span class="muted">尚未綁定任何客人</span>';
+/** 目前貨件已綁定（編輯）或預計綁定（新增）的客人 */
+function boundEmails() {
+  const s = state.items.find(x => x.id === state.editingItem);
+  return s ? s.emails : state.draftEmails;
 }
+
+function renderEmails() {
+  const s = state.items.find(x => x.id === state.editingItem);
+  const emails = boundEmails();
+  const pending = s ? (s.pending || []) : emails.filter(e => !(state.users.find(u => u.email === e) || {}).lastLogin);
+  $('#item-emails').innerHTML = emails.length
+    ? emails.map(e => `<span class="chip">${custName(e) ? `<b>${esc(custName(e))}</b>` : ''}<span class="chip-email">${esc(e)}</span>${pending.includes(e) ? PENDING_TAG : ''}<button type="button" data-action="remove-email" data-email="${esc(e)}" aria-label="移除 ${esc(e)}">✕</button></span>`).join('')
+    : `<span class="muted">${s ? '尚未綁定任何客人' : '可先選好客人，儲存時一併綁定'}</span>`;
+}
+
+/* 客人下拉選單：可搜尋名稱或 Email */
+let pickIdx = 0;
+
+function pickerOptions() {
+  const q = $('#cust-q').value.trim().toLowerCase();
+  const taken = new Set(boundEmails());
+  return state.users
+    .filter(u => !taken.has(u.email) && (!q || (u.name || '').toLowerCase().includes(q) || u.email.includes(q)))
+    .sort((a, b) => (a.name || '￿').localeCompare(b.name || '￿', 'zh-Hant') || a.email.localeCompare(b.email))
+    .slice(0, 50);
+}
+
+function renderPicker(open = true) {
+  const ul = $('#cust-list'), q = $('#cust-q');
+  q.setAttribute('aria-expanded', String(open));
+  if (!open) { ul.hidden = true; return; }
+  const opts = pickerOptions();
+  const typed = q.value.trim();
+  pickIdx = Math.max(0, Math.min(pickIdx, opts.length - 1));
+  ul.innerHTML = opts.length
+    ? opts.map((u, i) => `<li role="option" data-pick="${esc(u.email)}" class="${i === pickIdx ? 'active' : ''}">
+        <span class="pick-name">${u.name ? esc(u.name) : '<span class="muted">（未命名）</span>'}${u.role === 'admin' ? ' <span class="badge info">管理者</span>' : ''}</span>
+        <span class="pick-email">${esc(u.email)}</span></li>`).join('')
+    : isEmail(typed)
+      ? `<li role="option" data-pick="${esc(typed)}" class="active"><span class="pick-name">＋ 綁定新客人</span><span class="pick-email">${esc(typed)}</span></li>`
+      : `<li class="plain muted">${state.users.length ? '找不到符合的客人' : '還沒有客人'}，可用下方「＋ 新客戶」新增</li>`;
+  ul.hidden = false;
+  const active = ul.querySelector('.active');
+  if (active) active.scrollIntoView({ block: 'nearest' });
+}
+
+async function pickCustomer(email) {
+  $('#cust-q').value = '';
+  pickIdx = 0;
+  if (!state.editingItem) {
+    if (!state.draftEmails.includes(email)) state.draftEmails.push(email);
+    renderEmails();
+  } else {
+    try {
+      await api('bind', { id: state.editingItem, emails: [email] });
+      await refreshEditingItem();
+      toast(`已綁定 ${custShort(email)}`, 'ok');
+    } catch (e) { fail(e); }
+  }
+  if (document.activeElement === $('#cust-q')) renderPicker();
+}
+
+const custQ = $('#cust-q');
+custQ.addEventListener('focus', () => { pickIdx = 0; renderPicker(); });
+custQ.addEventListener('input', () => { pickIdx = 0; renderPicker(); });
+custQ.addEventListener('blur', () => setTimeout(() => renderPicker(false), 150));
+custQ.addEventListener('keydown', e => {
+  const items = $$('#cust-list [data-pick]');
+  if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+    e.preventDefault();
+    pickIdx = (pickIdx + (e.key === 'ArrowDown' ? 1 : -1) + items.length) % Math.max(items.length, 1);
+    renderPicker();
+  } else if (e.key === 'Enter') {
+    e.preventDefault(); // 不要送出整個表單
+    const li = $('#cust-list').hidden ? null : $('#cust-list .active[data-pick]');
+    if (li) pickCustomer(li.dataset.pick);
+  } else if (e.key === 'Escape' && !$('#cust-list').hidden) {
+    e.preventDefault(); // 只關選單，不關整個視窗
+    renderPicker(false);
+  }
+});
+$('#cust-list').addEventListener('mousedown', e => {
+  e.preventDefault(); // 保持輸入框焦點
+  const li = e.target.closest('[data-pick]');
+  if (li) pickCustomer(li.dataset.pick);
+});
+$$('#new-cust input').forEach(i => i.addEventListener('keydown', e => {
+  if (e.key === 'Enter') { e.preventDefault(); $('[data-action=create-cust]').click(); }
+}));
 
 async function loadHistory(id) {
   const ol = $('#item-history');
@@ -532,7 +623,7 @@ async function saveItem(next) {
     mode: isNew ? 'create' : 'update', id: f.id.value, product: f.product.value, qty: f.qty.value,
     batch: f.batch.value, status: f.status.value, note: f.note.value, bindCode: f.bindCode.value,
   };
-  if (isNew) payload.emails = splitEmails(f.emails.value);
+  if (isNew) payload.emails = state.draftEmails;
   try {
     const { id } = await api('saveShipment', payload);
     await loadAdmin();
@@ -546,8 +637,7 @@ async function saveItem(next) {
 
 async function refreshEditingItem() {
   await loadAdmin();
-  const s = state.items.find(x => x.id === state.editingItem);
-  if (s) renderEmails(s);
+  renderEmails();
   render();
   refreshBatchDialog();
 }
@@ -566,30 +656,42 @@ function genCode() {
 
 function renderUsers() {
   const el = $('#tab-users');
-  const users = [...state.users].sort((a, b) => (a.role === b.role ? a.email.localeCompare(b.email) : a.role === 'admin' ? -1 : 1));
+  const users = [...state.users].sort((a, b) => a.role !== b.role ? (a.role === 'admin' ? -1 : 1)
+    : (a.name || '￿').localeCompare(b.name || '￿', 'zh-Hant') || a.email.localeCompare(b.email));
   const admins = users.filter(u => u.role === 'admin').length;
   el.innerHTML = `
     <div class="card add-admin">
-      <h3>新增管理者</h3>
-      <div class="input-row">
-        <input id="admin-email" type="email" placeholder="對方的 Google 帳號 Email">
-        <button class="btn primary" data-action="add-admin">設為管理者</button>
+      <h3>新增客戶／管理者</h3>
+      <div class="input-row wrap">
+        <input id="nu-name" placeholder="名稱" autocomplete="off">
+        <input id="nu-email" type="email" placeholder="Google 帳號 Email" autocomplete="off">
+        <select id="nu-role"><option value="user">客戶</option><option value="admin">管理者</option></select>
+        <button class="btn primary" data-action="add-user">新增</button>
       </div>
-      <p class="muted small">對方不需要先登入過。管理者可以查看與修改所有物流單、貨件，也可以新增其他管理者。目前共 ${admins} 位管理者。</p>
+      <p class="muted small">對方不需要先登入過。名稱會顯示在貨件的客人下拉選單中，可隨時在下方表格修改。目前共 ${admins} 位管理者。</p>
     </div>
-    <div class="toolbar"><p class="muted grow">客人第一次用 Google 登入後，會自動出現在下方列表。</p>
+    <div class="toolbar"><p class="muted grow">客人第一次用 Google 登入後也會自動出現在這裡。</p>
       <button class="btn" data-action="refresh" title="重新整理">↻</button></div>
     ${users.length ? `<table class="table users">
       <thead><tr><th>Email</th><th>名稱</th><th>角色</th><th>綁定數</th><th>最後登入</th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td data-label="Email" class="break">${esc(u.email)}</td>
-        <td data-label="名稱">${esc(u.name) || '<span class="muted">—</span>'}</td>
+        <td data-label="名稱"><input class="inline-input" data-action="rename" data-email="${esc(u.email)}" value="${esc(u.name)}" placeholder="未命名" aria-label="${esc(u.email)} 的名稱"></td>
         <td data-label="角色"><select data-action="set-role" data-email="${esc(u.email)}" ${u.email === state.user.email ? 'disabled title="不能變更自己的角色"' : ''}>
-          <option value="user" ${u.role !== 'admin' ? 'selected' : ''}>使用者</option>
+          <option value="user" ${u.role !== 'admin' ? 'selected' : ''}>客戶</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理者</option></select></td>
         <td data-label="綁定數">${u.bound}</td>
         <td data-label="最後登入" class="muted nowrap">${u.lastLogin ? esc(fmtTime(u.lastLogin)) : '尚未登入'}</td>
       </tr>`).join('')}</tbody></table>` : state.loaded.users ? '<div class="empty"><p>沒有使用者</p></div>' : LOADING}`;
+}
+
+async function renameUser(email, name) {
+  try {
+    await api('saveUser', { email, name });
+    const u = state.users.find(x => x.email === email);
+    if (u) u.name = name;
+    toast('已更新名稱', 'ok');
+  } catch (err) { fail(err); renderUsers(); }
 }
 
 async function setRole(email, role) {
@@ -629,6 +731,7 @@ document.addEventListener('input', e => {
 document.addEventListener('change', e => {
   const t = e.target;
   if (t.dataset.action === 'set-role') setRole(t.dataset.email, t.value);
+  if (t.dataset.action === 'rename') renameUser(t.dataset.email, t.value.trim());
 });
 
 document.addEventListener('click', async e => {
@@ -693,11 +796,30 @@ document.addEventListener('click', async e => {
       $('#bulk-count').textContent = `將更新 ${state.selected.size} 筆貨件`;
       return $('#dlg-bulk').showModal();
     case 'gen-code': $('#form-item').bindCode.value = genCode(); return;
-    case 'add-email': return addEmails();
     case 'remove-email':
+      if (!state.editingItem) {
+        state.draftEmails = state.draftEmails.filter(x => x !== el.dataset.email);
+        return renderEmails();
+      }
       try { await api('unbind', { id: state.editingItem, email: el.dataset.email }); await refreshEditingItem(); }
       catch (err) { fail(err); }
       return;
+    case 'toggle-new-cust':
+      $('#new-cust').hidden = !$('#new-cust').hidden;
+      if (!$('#new-cust').hidden) $('#new-cust-name').focus();
+      return;
+    case 'create-cust': {
+      const name = $('#new-cust-name').value.trim(), email = $('#new-cust-email').value.trim();
+      if (!isEmail(email)) { toast('請輸入正確的 Gmail', 'error'); return $('#new-cust-email').focus(); }
+      try {
+        const r = await api('saveUser', { email, name });
+        state.users = await api('listUsers');
+        $('#new-cust-name').value = $('#new-cust-email').value = '';
+        $('#new-cust').hidden = true;
+        await pickCustomer(r.email);
+      } catch (err) { fail(err); }
+      return;
+    }
     case 'delete-item':
       if (!confirm(`確定要刪除貨件 ${state.editingItem}？\n客人的綁定會一併移除，歷程會保留。`)) return;
       try {
@@ -710,28 +832,17 @@ document.addEventListener('click', async e => {
       return;
 
     // 使用者管理
-    case 'add-admin': {
-      const email = $('#admin-email').value.trim();
-      if (!email) return $('#admin-email').focus();
-      return setRole(email, 'admin');
+    case 'add-user': {
+      const name = $('#nu-name').value.trim(), email = $('#nu-email').value.trim(), role = $('#nu-role').value;
+      if (!email) return $('#nu-email').focus();
+      try {
+        await api('saveUser', { email, name, role });
+        toast(`已新增${role === 'admin' ? '管理者' : '客戶'} ${name || email}`, 'ok');
+        state.users = await api('listUsers');
+      } catch (err) { fail(err); }
+      return renderUsers();
     }
   }
-});
-
-async function addEmails() {
-  const input = $('#bind-email');
-  const emails = splitEmails(input.value);
-  if (!emails.length) return input.focus();
-  try {
-    await api('bind', { id: state.editingItem, emails });
-    input.value = '';
-    await refreshEditingItem();
-    toast('已綁定', 'ok');
-  } catch (err) { fail(err); }
-}
-
-$('#bind-email').addEventListener('keydown', e => {
-  if (e.key === 'Enter') { e.preventDefault(); addEmails(); }
 });
 
 function onSubmit(form, handler) {

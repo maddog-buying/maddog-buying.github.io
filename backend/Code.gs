@@ -120,6 +120,7 @@ const ROUTES = {
   // 管理者：使用者
   listUsers:      { fn: listUsers_, admin: true },
   setRole:        { fn: setRole_, admin: true, write: true },
+  saveUser:       { fn: saveUser_, admin: true, write: true },
 };
 
 /* ------------------------------------------------------------------ */
@@ -334,6 +335,21 @@ function listUsers_() {
   }));
 }
 
+/** 新增客戶或修改名稱／角色（管理者在下拉選單中看到的名稱以這裡為準） */
+function saveUser_(p, user) {
+  const email = normEmail_(p.email);
+  if (!isEmail_(email)) throw apiError_(400, 'Email 格式錯誤：' + (p.email || ''));
+  const role = p.role === 'admin' || p.role === 'user' ? p.role : null;
+  if (email === user.email && role === 'user') throw apiError_(400, '不能移除自己的管理者權限');
+  const patch = {};
+  if ('name' in p) patch.name = str_(p.name);
+  if (role) patch.role = role;
+  const u = readAll_('users').find(x => x.email === email);
+  if (u) update_('users', u._row, patch);
+  else append_('users', { email, name: patch.name || '', role: role || 'user', createdAt: new Date(), lastLogin: '' });
+  return { email };
+}
+
 function setRole_(p, user) {
   const email = normEmail_(p.email);
   if (!isEmail_(email)) throw apiError_(400, 'Email 格式錯誤：' + email);
@@ -371,6 +387,9 @@ function bindEmails_(id, emails, user) {
   const have = new Set(readAll_('bindings').filter(b => b.id === id).map(b => b.email));
   const now = new Date();
   appendMany_('bindings', list.filter(e => !have.has(e)).map(email => ({ id, email, boundAt: now, boundBy: user.email })));
+  // 還不在使用者名單的 Email 先建立起來，之後就會出現在客人下拉選單中
+  const known = new Set(readAll_('users').map(u => u.email));
+  appendMany_('users', list.filter(e => !known.has(e)).map(email => ({ email, name: '', role: 'user', createdAt: now, lastLogin: '' })));
 }
 
 /** 產生當天的下一個貨件編號，例如 MD261012-003 */

@@ -305,3 +305,29 @@ label.check input { margin-top: 2px; flex: none; }
 
 .pending { font-size: .72rem; font-weight: 600; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px; margin-left: 6px; cursor: help; white-space: nowrap; }
 .pending-dot { color: var(--warn); font-size: .7rem; cursor: help; }
+
+/* 客人下拉選單 */
+.field { margin-bottom: 12px; }
+.field-label { display: block; font-size: .9rem; font-weight: 500; margin-bottom: 6px; }
+.picker { position: relative; }
+.picker-list {
+  position: absolute; z-index: 5; left: 0; right: 0; top: calc(100% + 4px);
+  max-height: 260px; overflow-y: auto; margin: 0; padding: 4px; list-style: none;
+  background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+  box-shadow: 0 12px 32px rgb(0 0 0 / .18);
+}
+.picker-list li { display: flex; flex-direction: column; gap: 1px; padding: 8px 10px; border-radius: 8px; cursor: pointer; }
+.picker-list li.active, .picker-list li[data-pick]:hover { background: var(--info-bg); }
+.picker-list li.plain { cursor: default; font-size: .9rem; }
+.pick-name { font-weight: 600; }
+.pick-email { font-size: .85rem; color: var(--muted); word-break: break-all; }
+.chip b { font-weight: 600; margin-right: 6px; }
+.chip-email { color: var(--muted); }
+.link-btn { border: 0; background: none; color: var(--primary); font: inherit; font-size: .88rem; padding: 6px 0; cursor: pointer; }
+.link-btn:hover { text-decoration: underline; }
+.input-row.wrap { flex-wrap: wrap; }
+.input-row.wrap input { flex: 1 1 160px; }
+.input-row.wrap select { width: auto; }
+.inline-input { min-height: 34px; padding: 4px 8px; border: 1px dashed var(--border); background: transparent; }
+.inline-input:hover { border-style: solid; }
+.inline-input:focus { background: var(--surface); }
