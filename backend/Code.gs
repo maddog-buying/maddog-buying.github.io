@@ -8,7 +8,7 @@
 
 const CONFIG = {
   // Google Cloud Console 建立的 OAuth 用戶端 ID（需與前端 config.js 相同）
-  GOOGLE_CLIENT_ID: 'YOUR_CLIENT_ID.apps.googleusercontent.com',
+  GOOGLE_CLIENT_ID: '673711843673-78ota4tlqcsa0ghgp1gk2r2pi8t74pd3.apps.googleusercontent.com',
   // 可選的貨態狀態，依需求增減
   STATUSES: ['已建立', '已收件', '處理中', '已出貨', '運送中', '配送中', '已送達', '異常', '已取消'],
 };
