@@ -71,11 +71,10 @@ python -m http.server 8080 --directory frontend
    GOOGLE_CLIENT_ID: 'xxxx.apps.googleusercontent.com',
    ```
 2. 先在本機測試：`python -m http.server 8080 --directory frontend`，開啟 http://localhost:8080 ，用 Google 登入。
-3. 發布到 GitHub Pages（免費，而且是 HTTPS，PWA 必須使用 HTTPS）：
-   - 建立一個 GitHub repo，把 `frontend/` 裡的檔案上傳到 repo 根目錄。
-   - repo 的 Settings → Pages → Source 選 `main` branch / root。
-   - 幾分鐘後即可透過 `https://你的帳號.github.io/repo名稱/` 開啟。
-   - 記得把 `https://你的帳號.github.io` 加入第 2 步的「已授權的 JavaScript 來源」。
+3. 發布：本專案已設定 GitHub Actions（`.github/workflows/pages.yml`），
+   只要 commit 並 push 到 `main`，約 1 分鐘後就會自動部署到 **https://maddog-buying.github.io/**。
+   - Repo：https://github.com/maddog-buying/maddog-buying.github.io
+   - 記得把 `https://maddog-buying.github.io` 加入第 2 步的「已授權的 JavaScript 來源」。
 
 ### 5. 安裝到手機
 
