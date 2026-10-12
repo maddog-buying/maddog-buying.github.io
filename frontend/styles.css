@@ -331,3 +331,7 @@ label.check input { margin-top: 2px; flex: none; }
 .inline-input { min-height: 34px; padding: 4px 8px; border: 1px dashed var(--border); background: transparent; }
 .inline-input:hover { border-style: solid; }
 .inline-input:focus { background: var(--surface); }
+.row-actions { text-align: right; width: 1%; }
+@media (max-width: 720px) {
+  .table td.row-actions { justify-content: flex-end; padding-top: 6px; }
+}

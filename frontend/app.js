@@ -299,21 +299,19 @@ function renderMine() {
     <div class="toolbar">
       <input type="search" class="search" placeholder="搜尋商品、編號或狀態" data-model="mineQ" value="${esc(state.mineQ)}">
       <button class="btn" data-action="refresh" title="重新整理">↻<span class="hide-sm"> 重新整理</span></button>
-      <button class="btn primary" data-action="open-bind">＋ 綁定貨件</button>
     </div>`;
   let body;
   if (!state.loaded.mine) {
     body = LOADING;
   } else if (!state.mine.length) {
-    body = `<div class="empty"><p>尚未綁定任何貨件</p><p class="muted">請點選「綁定貨件」，或請管理者協助綁定您的 Google 帳號。</p></div>`;
+    body = `<div class="empty"><p>目前沒有您的貨件</p><p class="muted">請將您登入用的 Gmail（${esc(state.user.email)}）提供給我們，綁定後就會顯示在這裡。</p></div>`;
   } else if (!list.length) {
     body = `<div class="empty"><p>找不到符合「${esc(state.mineQ)}」的貨件</p></div>`;
   } else {
     body = `<div class="cards">${list.map(s => `
       <article class="card ship-card tone-${s.status ? tone(s.status) : 'muted'}">
         <div class="card-head">
-          <h3 class="product">${esc(s.product) || '<span class="muted">（此貨件已不存在）</span>'} ${qtyTag(s.qty)}</h3>
-          <button class="icon-btn" data-action="unbind-mine" data-id="${esc(s.id)}" title="取消綁定" aria-label="取消綁定">✕</button>
+          <h3 class="product">${esc(s.product)} ${qtyTag(s.qty)}</h3>
         </div>
         <div class="ship-id muted">${esc(s.id)}</div>
         <div class="ship-status">${badge(s.status)}</div>
@@ -490,7 +488,6 @@ function openItem(id, preset = {}) {
   const batch = state.batches.find(b => b.id === f.batch.value);
   setStatus(f.status, s ? s.status : (preset.status || (batch && batch.status)));
   f.note.value = s ? s.note : '';
-  f.bindCode.value = s ? s.bindCode : genCode();
   state.draftEmails = [];
   $('#cust-q').value = '';
   $('#new-cust').hidden = true;
@@ -624,7 +621,7 @@ async function saveItem(next) {
   const isNew = !state.editingItem;
   const payload = {
     mode: isNew ? 'create' : 'update', id: f.id.value, product: f.product.value, qty: f.qty.value,
-    batch: f.batch.value, status: f.status.value, note: f.note.value, bindCode: f.bindCode.value,
+    batch: f.batch.value, status: f.status.value, note: f.note.value,
   };
   if (isNew) payload.emails = state.draftEmails;
   try {
@@ -647,10 +644,6 @@ async function refreshEditingItem() {
 
 function refreshBatchDialog() {
   if ($('#dlg-batch').open && state.editingBatch) renderBatchItems();
-}
-
-function genCode() {
-  return String(crypto.getRandomValues(new Uint32Array(1))[0] % 1e6).padStart(6, '0');
 }
 
 /* ------------------------------------------------------------------ */
@@ -676,7 +669,7 @@ function renderUsers() {
     <div class="toolbar"><p class="muted grow">客人第一次用 Google 登入後也會自動出現在這裡。</p>
       <button class="btn" data-action="refresh" title="重新整理">↻</button></div>
     ${users.length ? `<table class="table users">
-      <thead><tr><th>Email</th><th>暱稱（管理者用）</th><th>Google 名稱</th><th>角色</th><th>綁定數</th><th>最後登入</th></tr></thead>
+      <thead><tr><th>Email</th><th>暱稱（管理者用）</th><th>Google 名稱</th><th>角色</th><th>綁定數</th><th>最後登入</th><th></th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td data-label="Email" class="break">${esc(u.email)}</td>
         <td data-label="暱稱"><input class="inline-input" data-action="rename" data-email="${esc(u.email)}" value="${esc(u.nickname)}" placeholder="點此設定暱稱" aria-label="${esc(u.email)} 的暱稱"></td>
@@ -686,6 +679,7 @@ function renderUsers() {
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理者</option></select></td>
         <td data-label="綁定數">${u.bound}</td>
         <td data-label="最後登入" class="muted nowrap">${u.lastLogin ? esc(fmtTime(u.lastLogin)) : '尚未登入'}</td>
+        <td class="row-actions">${u.email === state.user.email ? '' : `<button class="btn sm danger ghost" data-action="delete-user" data-email="${esc(u.email)}">刪除</button>`}</td>
       </tr>`).join('')}</tbody></table>` : state.loaded.users ? '<div class="empty"><p>沒有使用者</p></div>' : LOADING}`;
 }
 
@@ -757,12 +751,6 @@ document.addEventListener('click', async e => {
     case 'refresh': return switchTab(state.tab);
 
     // 使用者
-    case 'open-bind': $('#form-bind').reset(); return $('#dlg-bind').showModal();
-    case 'unbind-mine':
-      if (!confirm(`確定要取消綁定 ${id}？`)) return;
-      try { await api('unbindMine', { id }); state.mine = state.mine.filter(s => s.id !== id); renderMine(); toast('已取消綁定', 'ok'); }
-      catch (err) { fail(err); }
-      return;
 
     // 物流單
     case 'new-batch': return openBatch(null);
@@ -799,7 +787,6 @@ document.addEventListener('click', async e => {
       $('#form-bulk').reset();
       $('#bulk-count').textContent = `將更新 ${state.selected.size} 筆貨件`;
       return $('#dlg-bulk').showModal();
-    case 'gen-code': $('#form-item').bindCode.value = genCode(); return;
     case 'remove-email':
       if (!state.editingItem) {
         state.draftEmails = state.draftEmails.filter(x => x !== el.dataset.email);
@@ -836,6 +823,18 @@ document.addEventListener('click', async e => {
       return;
 
     // 使用者管理
+    case 'delete-user': {
+      const u = userOf(el.dataset.email);
+      const who = displayName(u) ? `${displayName(u)}（${u.email}）` : u.email;
+      if (!confirm(`確定要刪除 ${who}？${u.bound ? `\n他的 ${u.bound} 筆貨件綁定也會一併移除。` : ''}`)) return;
+      try {
+        await api('deleteUser', { email: u.email });
+        toast(`已刪除 ${displayName(u) || u.email}`, 'ok');
+        state.users = await api('listUsers');
+        if (state.loaded.items) state.items = await api('listShipments');
+      } catch (err) { fail(err); }
+      return renderUsers();
+    }
     case 'add-user': {
       const name = $('#nu-name').value.trim(), email = $('#nu-email').value.trim(), role = $('#nu-role').value;
       if (!email) return $('#nu-email').focus();
@@ -857,16 +856,6 @@ function onSubmit(form, handler) {
     try { await handler(btn); } finally { btn.disabled = false; }
   });
 }
-
-onSubmit('#form-bind', async () => {
-  const f = $('#form-bind');
-  try {
-    const { id } = await api('bindByCode', { id: f.id.value, code: f.code.value });
-    $('#dlg-bind').close();
-    toast(`已綁定 ${id}`, 'ok');
-    await loadMine(); renderMine();
-  } catch (e) { fail(e); }
-});
 
 onSubmit('#form-batch', saveBatch);
 onSubmit('#form-item', btn => saveItem(btn.value === 'next'));

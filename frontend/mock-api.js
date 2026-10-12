@@ -1,6 +1,6 @@
 // 示範模式用的假後端：與 backend/Code.gs 的 API 行為一致，資料存在 localStorage。
 window.MockApi = (() => {
-  const KEY = 'st_demo_db_v3';
+  const KEY = 'st_demo_db_v4';
   const STATUSES = ['倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
   const ADMIN = 'admin@demo.local', USER = 'user@demo.local';
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
@@ -23,8 +23,7 @@ window.MockApi = (() => {
     let n = 0;
     const item = (batchId, product, qty, status, h, emails, note = '') => {
       const id = `MD${day(h + 200)}-${String(++n).padStart(3, '0')}`;
-      db.items.push({ id, product, qty, batch: batchId, status, note, bindCode: String(100000 + n * 7919).slice(-6),
-        updatedAt: ago(h), updatedBy: ADMIN, createdAt: ago(h + 200) });
+      db.items.push({ id, product, qty, batch: batchId, status, note, updatedAt: ago(h), updatedBy: ADMIN, createdAt: ago(h + 200) });
       STATUSES.slice(0, STATUSES.indexOf(status) + 1).forEach((st, i, arr) =>
         db.history.push({ time: ago(h + (arr.length - 1 - i) * 30), id, status: st, note: '', by: ADMIN, batch: batchId }));
       emails.forEach(email => db.bindings.push({ id, email, boundAt: ago(h + 100), boundBy: ADMIN }));
@@ -75,18 +74,9 @@ window.MockApi = (() => {
 
   const routes = {
     me: (p, u) => ({ ...u, statuses: STATUSES }),
-    myShipments: (p, u, db) => uniq(db.bindings.filter(b => b.email === u.email).map(b => b.id)).map(id => {
-      const s = db.items.find(x => x.id === id);
-      return s ? { id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: s.updatedAt }
-               : { id, product: '', qty: '', status: null, note: '', updatedAt: null };
-    }),
-    bindByCode: (p, u, db) => {
-      const id = normId(p.id), s = db.items.find(x => x.id === id);
-      if (!s || !s.bindCode || s.bindCode !== str(p.code)) throw err(400, '貨件編號或綁定碼錯誤');
-      bindEmails(db, id, [u.email], u);
-      return { id };
-    },
-    unbindMine: (p, u, db) => { db.bindings = db.bindings.filter(b => !(b.id === normId(p.id) && b.email === u.email)); return true; },
+    myShipments: (p, u, db) => uniq(db.bindings.filter(b => b.email === u.email).map(b => b.id))
+      .map(id => db.items.find(x => x.id === id)).filter(Boolean)
+      .map(s => ({ id: s.id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: s.updatedAt })),
 
     listBatches: (p, u, db) => db.batches.map(b => ({ ...b, itemCount: db.items.filter(i => i.batch === b.id).length })),
     saveBatch: (p, u, db) => {
@@ -121,7 +111,7 @@ window.MockApi = (() => {
       const product = str(p.product); if (!product) throw err(400, '請輸入商品名稱');
       const qty = Math.max(1, parseInt(p.qty, 10) || 1), batch = normId(p.batch);
       if (batch && !db.batches.some(b => b.id === batch)) throw err(404, '找不到物流編號：' + batch);
-      const status = valid(p.status), note = str(p.note), bindCode = str(p.bindCode), t = now();
+      const status = valid(p.status), note = str(p.note), t = now();
       if (p.mode === 'create') {
         let id = normId(p.id);
         if (!id) {
@@ -130,7 +120,7 @@ window.MockApi = (() => {
           id = prefix + String(max + 1).padStart(3, '0');
         }
         if (db.items.some(s => s.id === id)) throw err(409, '貨件編號已存在：' + id);
-        db.items.push({ id, product, qty, batch, status, note, bindCode, updatedAt: t, updatedBy: u.email, createdAt: t });
+        db.items.push({ id, product, qty, batch, status, note, updatedAt: t, updatedBy: u.email, createdAt: t });
         db.history.push({ time: t, id, status, note, by: u.email, batch });
         if (p.emails && p.emails.length) bindEmails(db, id, p.emails, u);
         return { id };
@@ -138,7 +128,7 @@ window.MockApi = (() => {
       const id = normId(p.id), ex = db.items.find(s => s.id === id);
       if (!ex) throw err(404, '找不到貨件編號：' + id);
       const changed = ex.status !== status || ex.note !== note;
-      Object.assign(ex, { product, qty, batch, bindCode }, changed ? { status, note, updatedAt: t, updatedBy: u.email } : {});
+      Object.assign(ex, { product, qty, batch }, changed ? { status, note, updatedAt: t, updatedBy: u.email } : {});
       if (changed) db.history.push({ time: t, id, status, note, by: u.email, batch });
       return { id };
     },
@@ -174,6 +164,14 @@ window.MockApi = (() => {
       else db.users.push({ email, name: '', nickname: str(p.nickname), role: role || 'user', createdAt: now(), lastLogin: '' });
       return { email };
     },
+    deleteUser: (p, u, db) => {
+      const email = normEmail(p.email);
+      if (email === u.email) throw err(400, '不能刪除自己');
+      const removed = db.bindings.filter(b => b.email === email).length;
+      db.bindings = db.bindings.filter(b => b.email !== email);
+      db.users = db.users.filter(x => x.email !== email);
+      return { removedBindings: removed };
+    },
     setRole: (p, u, db) => {
       const email = normEmail(p.email), role = p.role === 'admin' ? 'admin' : 'user';
       if (!isEmail(email)) throw err(400, 'Email 格式錯誤：' + email);
@@ -183,7 +181,7 @@ window.MockApi = (() => {
       return true;
     },
   };
-  const PUBLIC = ['me', 'myShipments', 'bindByCode', 'unbindMine'];
+  const PUBLIC = ['me', 'myShipments'];
 
   async function handle({ action, payload, idToken }) {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 250));

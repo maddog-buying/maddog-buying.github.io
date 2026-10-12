@@ -30,7 +30,7 @@ const SHEETS = {
   items: {
     name: '貨件',
     cols: [['id', '貨件編號'], ['product', '商品名稱'], ['qty', '數量'], ['batch', '物流編號'],
-           ['status', '目前狀態'], ['note', '備註（客戶可見）'], ['bindCode', '綁定碼'],
+           ['status', '目前狀態'], ['note', '備註（客戶可見）'],
            ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間']],
   },
   history: {
@@ -56,6 +56,13 @@ const SHEETS = {
 /** 第一次使用（或更新版本後）手動執行：建立／更新工作表，並把執行者設為管理者 */
 function setup() {
   const ss = SpreadsheetApp.getActive();
+  // 舊版「貨件」有綁定碼欄位，已停用：先刪掉該欄，避免後面的欄位錯位
+  const itemSheet = ss.getSheetByName(SHEETS.items.name);
+  if (itemSheet && itemSheet.getLastColumn() > 0) {
+    const col = itemSheet.getRange(1, 1, 1, itemSheet.getLastColumn()).getValues()[0].indexOf('綁定碼');
+    if (col >= 0) { itemSheet.deleteColumn(col + 1); Logger.log('已移除「貨件」的綁定碼欄位'); }
+  }
+
   Object.values(SHEETS).forEach(def => {
     let sh = ss.getSheetByName(def.name);
     if (!sh) sh = ss.insertSheet(def.name);
@@ -109,8 +116,6 @@ const ROUTES = {
   // 所有登入者
   me:             { fn: me_ },
   myShipments:    { fn: myShipments_ },
-  bindByCode:     { fn: bindByCode_, write: true },
-  unbindMine:     { fn: unbindMine_, write: true },
   // 管理者：物流單
   listBatches:    { fn: listBatches_, admin: true },
   saveBatch:      { fn: saveBatch_, admin: true, write: true },
@@ -127,6 +132,7 @@ const ROUTES = {
   listUsers:      { fn: listUsers_, admin: true },
   setRole:        { fn: setRole_, admin: true, write: true },
   saveUser:       { fn: saveUser_, admin: true, write: true },
+  deleteUser:     { fn: deleteUser_, admin: true, write: true },
 };
 
 /* ------------------------------------------------------------------ */
@@ -167,7 +173,7 @@ function touchUser_(info) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 一般使用者（不會回傳物流編號、上游等內部資料）                        */
+/* 一般使用者（只能查看，不會回傳物流編號、上游等內部資料）              */
 /* ------------------------------------------------------------------ */
 
 function me_(p, user) {
@@ -177,27 +183,10 @@ function me_(p, user) {
 function myShipments_(p, user) {
   const ids = unique_(readAll_('bindings').filter(b => b.email === user.email).map(b => b.id));
   const map = indexBy_(readAll_('items'), 'id');
-  return ids.map(id => {
+  return ids.filter(id => map[id]).map(id => {
     const s = map[id];
-    return s
-      ? { id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: iso_(s.updatedAt) }
-      : { id, product: '', qty: '', status: null, note: '', updatedAt: null };
+    return { id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: iso_(s.updatedAt) };
   });
-}
-
-function bindByCode_(p, user) {
-  const id = normId_(p.id);
-  const code = str_(p.code);
-  const s = readAll_('items').find(x => x.id === id);
-  // 不論編號不存在或綁定碼錯誤都回相同訊息，避免被猜編號
-  if (!s || !s.bindCode || String(s.bindCode) !== code) throw apiError_(400, '貨件編號或綁定碼錯誤');
-  bindEmails_(id, [user.email], user);
-  return { id };
-}
-
-function unbindMine_(p, user) {
-  removeWhere_('bindings', b => b.id === normId_(p.id) && b.email === user.email);
-  return true;
 }
 
 /* ------------------------------------------------------------------ */
@@ -255,7 +244,7 @@ function listShipments_() {
   // 曾經登入過的帳號；綁定了但從沒登入的 Email 會標示出來，方便發現打錯字
   const loggedIn = new Set(readAll_('users').filter(u => u.lastLogin).map(u => u.email));
   return readAll_('items').map(s => ({
-    id: s.id, product: s.product, qty: s.qty, batch: s.batch, status: s.status, note: s.note, bindCode: s.bindCode,
+    id: s.id, product: s.product, qty: s.qty, batch: s.batch, status: s.status, note: s.note,
     updatedAt: iso_(s.updatedAt), updatedBy: s.updatedBy, createdAt: iso_(s.createdAt),
     emails: unique_(byId[s.id] || []),
     pending: unique_(byId[s.id] || []).filter(e => !loggedIn.has(e)),
@@ -269,13 +258,13 @@ function saveShipment_(p, user) {
   const batch = normId_(p.batch);
   if (batch && !readAll_('batches').some(b => b.id === batch)) throw apiError_(404, '找不到物流編號：' + batch);
   const status = validStatus_(p.status);
-  const note = str_(p.note), bindCode = str_(p.bindCode), now = new Date();
+  const note = str_(p.note), now = new Date();
   const items = readAll_('items');
 
   if (p.mode === 'create') {
     const id = normId_(p.id) || nextId_(items);
     if (items.some(s => s.id === id)) throw apiError_(409, '貨件編號已存在：' + id);
-    append_('items', { id, product, qty, batch, status, note, bindCode, updatedAt: now, updatedBy: user.email, createdAt: now });
+    append_('items', { id, product, qty, batch, status, note, updatedAt: now, updatedBy: user.email, createdAt: now });
     append_('history', { time: now, id, status, note, by: user.email, batch });
     if (p.emails && p.emails.length) bindEmails_(id, p.emails, user);
     return { id };
@@ -285,7 +274,7 @@ function saveShipment_(p, user) {
   const ex = items.find(s => s.id === id);
   if (!ex) throw apiError_(404, '找不到貨件編號：' + id);
   const changed = ex.status !== status || ex.note !== note;
-  update_('items', ex._row, Object.assign({ product, qty, batch, bindCode },
+  update_('items', ex._row, Object.assign({ product, qty, batch },
     changed ? { status, note, updatedAt: now, updatedBy: user.email } : {}));
   if (changed) append_('history', { time: now, id, status, note, by: user.email, batch });
   return { id };
@@ -354,6 +343,16 @@ function saveUser_(p, user) {
   if (u) update_('users', u._row, patch);
   else append_('users', { email, name: '', nickname: patch.nickname || '', role: role || 'user', createdAt: new Date(), lastLogin: '' });
   return { email };
+}
+
+/** 刪除使用者與他的所有貨件綁定（若對方之後再登入，會以一般客戶身分重新建立、沒有任何綁定） */
+function deleteUser_(p, user) {
+  const email = normEmail_(p.email);
+  if (email === user.email) throw apiError_(400, '不能刪除自己');
+  const removed = readAll_('bindings').filter(b => b.email === email).length;
+  removeWhere_('bindings', b => b.email === email);
+  removeWhere_('users', u => u.email === email);
+  return { removedBindings: removed };
 }
 
 function setRole_(p, user) {

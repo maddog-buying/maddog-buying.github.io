@@ -53,20 +53,6 @@
     </main>
   </section>
 
-  <!-- 使用者綁定編號 -->
-  <dialog id="dlg-bind" class="dialog">
-    <form method="dialog" id="form-bind">
-      <h2>綁定貨件</h2>
-      <p class="muted">請輸入貨件編號與我們提供的綁定碼。</p>
-      <label>貨件編號<input name="id" required autocomplete="off" autocapitalize="characters" placeholder="例如 MD261012-001"></label>
-      <label>綁定碼<input name="code" required autocomplete="off" inputmode="numeric"></label>
-      <div class="dlg-actions">
-        <button type="button" class="btn ghost" data-close>取消</button>
-        <button class="btn primary" value="ok">綁定</button>
-      </div>
-    </form>
-  </dialog>
-
   <!-- 管理者：物流單 -->
   <dialog id="dlg-batch" class="dialog wide">
     <form method="dialog" id="form-batch">
@@ -125,12 +111,6 @@
         <label>狀態<select name="status" required></select></label>
       </div>
       <label>備註<textarea name="note" rows="2" placeholder="客人看得到，例如國內宅配單號"></textarea></label>
-      <label>綁定碼
-        <span class="input-row">
-          <input name="bindCode" autocomplete="off" placeholder="留空則客人無法自行綁定">
-          <button type="button" class="btn sm" data-action="gen-code">產生</button>
-        </span>
-      </label>
       <div id="item-extra" hidden>
         <h3>歷程</h3>
         <ol id="item-history" class="timeline"></ol>
