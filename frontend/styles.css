@@ -302,3 +302,6 @@ label.check input { margin-top: 2px; flex: none; }
 @media (max-width: 720px) {
   .email-cell { max-width: none; }
 }
+
+.pending { font-size: .72rem; font-weight: 600; color: var(--warn); background: var(--warn-bg); border-radius: 999px; padding: 0 7px; margin-left: 6px; cursor: help; white-space: nowrap; }
+.pending-dot { color: var(--warn); font-size: .7rem; cursor: help; }

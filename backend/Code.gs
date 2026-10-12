@@ -65,7 +65,7 @@ function setup() {
     if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
   });
 
-  const email = Session.getEffectiveUser().getEmail().toLowerCase();
+  const email = normEmail_(Session.getEffectiveUser().getEmail());
   if (!readAll_('users').some(u => u.email === email)) {
     append_('users', { email, name: '', role: 'admin', createdAt: new Date(), lastLogin: '' });
   }
@@ -141,7 +141,7 @@ function authenticate_(idToken) {
     const t = JSON.parse(r.getContentText());
     if (t.aud !== CONFIG.GOOGLE_CLIENT_ID) throw apiError_(401, '登入憑證不屬於本系統');
     if (String(t.email_verified) !== 'true') throw apiError_(401, 'Google 帳號 Email 尚未驗證');
-    info = { email: String(t.email).toLowerCase(), name: t.name || '' };
+    info = { email: normEmail_(t.email), name: t.name || '' };
     const ttl = Number(t.exp) - Math.floor(Date.now() / 1000) - 30;
     if (ttl > 0) cache.put(key, JSON.stringify(info), Math.min(ttl, 21600));
     touchUser_(info);
@@ -245,10 +245,13 @@ function deleteBatch_(p) {
 function listShipments_() {
   const byId = {};
   readAll_('bindings').forEach(b => (byId[b.id] = byId[b.id] || []).push(b.email));
+  // 曾經登入過的帳號；綁定了但從沒登入的 Email 會標示出來，方便發現打錯字
+  const loggedIn = new Set(readAll_('users').filter(u => u.lastLogin).map(u => u.email));
   return readAll_('items').map(s => ({
     id: s.id, product: s.product, qty: s.qty, batch: s.batch, status: s.status, note: s.note, bindCode: s.bindCode,
     updatedAt: iso_(s.updatedAt), updatedBy: s.updatedBy, createdAt: iso_(s.createdAt),
     emails: unique_(byId[s.id] || []),
+    pending: unique_(byId[s.id] || []).filter(e => !loggedIn.has(e)),
   }));
 }
 
@@ -313,7 +316,7 @@ function bind_(p, user) {
 
 function unbind_(p) {
   const id = normId_(p.id);
-  const email = String(p.email || '').toLowerCase();
+  const email = normEmail_(p.email);
   removeWhere_('bindings', b => b.id === id && b.email === email);
   return true;
 }
@@ -332,7 +335,7 @@ function listUsers_() {
 }
 
 function setRole_(p, user) {
-  const email = String(p.email || '').trim().toLowerCase();
+  const email = normEmail_(p.email);
   if (!isEmail_(email)) throw apiError_(400, 'Email 格式錯誤：' + email);
   const role = p.role === 'admin' ? 'admin' : 'user';
   if (email === user.email && role !== 'admin') throw apiError_(400, '不能移除自己的管理者權限');
@@ -362,7 +365,7 @@ function setItemsStatus_(items, status, note, user, now, onlyForward, setNote) {
 }
 
 function bindEmails_(id, emails, user) {
-  const list = unique_(emails.map(e => String(e).trim().toLowerCase()).filter(Boolean));
+  const list = unique_(emails.map(normEmail_).filter(Boolean));
   const bad = list.filter(e => !isEmail_(e));
   if (bad.length) throw apiError_(400, 'Email 格式錯誤：' + bad.join(', '));
   const have = new Set(readAll_('bindings').filter(b => b.id === id).map(b => b.email));
@@ -404,7 +407,7 @@ function readAll_(key) {
     cols.forEach(([k], j) => (o[k] = r[j] instanceof Date ? r[j] : String(r[j]).trim()));
     if (o.id !== undefined) o.id = normId_(o.id);
     if (o.batch !== undefined) o.batch = normId_(o.batch);
-    if (o.email !== undefined) o.email = o.email.toLowerCase();
+    if (o.email !== undefined) o.email = normEmail_(o.email);
     return o;
   }).filter(o => Object.keys(o).some(k => k !== '_row' && o[k] !== ''));
 }
@@ -467,6 +470,17 @@ function cell_(v) {
 function str_(v) { return String(v == null ? '' : v).trim(); }
 function normId_(v) { return str_(v).toUpperCase(); }
 function isEmail_(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
+
+/**
+ * 統一 Email 寫法：轉小寫；Gmail 的點號與 +別名 都是同一個信箱，一併去除。
+ * 例如 John.Doe+shop@gmail.com → johndoe@gmail.com
+ */
+function normEmail_(e) {
+  e = str_(e).toLowerCase();
+  const m = e.match(/^([^@]+)@(gmail\.com|googlemail\.com)$/);
+  return m ? m[1].split('+')[0].replace(/\./g, '') + '@gmail.com' : e;
+}
+
 function iso_(d) { return d instanceof Date ? d.toISOString() : (d || null); }
 function unique_(a) { return Array.from(new Set(a)); }
 function indexBy_(arr, k) { const m = {}; arr.forEach(o => (m[o[k]] = o)); return m; }

@@ -46,6 +46,11 @@ window.MockApi = (() => {
   const uniq = a => [...new Set(a)];
   const now = () => new Date().toISOString();
   const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
+  const normEmail = e => {
+    e = str(e).toLowerCase();
+    const m = e.match(/^([^@]+)@(gmail\.com|googlemail\.com)$/);
+    return m ? m[1].split('+')[0].replace(/\./g, '') + '@gmail.com' : e;
+  };
   const rank = s => STATUSES.indexOf(s);
   const valid = s => { s = str(s); if (rank(s) < 0) throw err(400, '無效的狀態：' + s); return s; };
 
@@ -59,7 +64,7 @@ window.MockApi = (() => {
   }
 
   function bindEmails(db, id, emails, u) {
-    const list = uniq(emails.map(e => str(e).toLowerCase()).filter(Boolean));
+    const list = uniq(emails.map(normEmail).filter(Boolean));
     const bad = list.filter(e => !isEmail(e));
     if (bad.length) throw err(400, 'Email 格式錯誤：' + bad.join(', '));
     list.forEach(email => {
@@ -107,7 +112,10 @@ window.MockApi = (() => {
       return true;
     },
 
-    listShipments: (p, u, db) => db.items.map(s => ({ ...s, emails: uniq(db.bindings.filter(b => b.id === s.id).map(b => b.email)) })),
+    listShipments: (p, u, db) => db.items.map(s => {
+      const emails = uniq(db.bindings.filter(b => b.id === s.id).map(b => b.email));
+      return { ...s, emails, pending: emails.filter(e => !db.users.some(x => x.email === e && x.lastLogin)) };
+    }),
     saveShipment: (p, u, db) => {
       const product = str(p.product); if (!product) throw err(400, '請輸入商品名稱');
       const qty = Math.max(1, parseInt(p.qty, 10) || 1), batch = normId(p.batch);
@@ -152,11 +160,11 @@ window.MockApi = (() => {
       bindEmails(db, id, p.emails || [], u);
       return true;
     },
-    unbind: (p, u, db) => { db.bindings = db.bindings.filter(b => !(b.id === normId(p.id) && b.email === str(p.email).toLowerCase())); return true; },
+    unbind: (p, u, db) => { db.bindings = db.bindings.filter(b => !(b.id === normId(p.id) && b.email === normEmail(p.email))); return true; },
 
     listUsers: (p, u, db) => db.users.map(x => ({ ...x, bound: db.bindings.filter(b => b.email === x.email).length })),
     setRole: (p, u, db) => {
-      const email = str(p.email).toLowerCase(), role = p.role === 'admin' ? 'admin' : 'user';
+      const email = normEmail(p.email), role = p.role === 'admin' ? 'admin' : 'user';
       if (!isEmail(email)) throw err(400, 'Email 格式錯誤：' + email);
       if (email === u.email && role !== 'admin') throw err(400, '不能移除自己的管理者權限');
       const x = db.users.find(y => y.email === email);
@@ -169,7 +177,7 @@ window.MockApi = (() => {
   async function handle({ action, payload, idToken }) {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 250));
     try {
-      const email = String(idToken || '').replace(/^demo:/, '');
+      const email = normEmail(String(idToken || '').replace(/^demo:/, ''));
       if (!email) throw err(401, '請先登入');
       const db = load();
       let user = db.users.find(x => x.email === email);

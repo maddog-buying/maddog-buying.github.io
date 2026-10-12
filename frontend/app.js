@@ -396,8 +396,7 @@ async function saveBatch() {
     await loadAdmin();
     render();
     toast(`${isNew ? '已新增' : '已更新'} ${r.id}${r.updated ? `，同步更新 ${r.updated} 筆貨件` : ''}`, 'ok');
-    if (isNew) openBatch(r.id); // 切到編輯模式，方便接著加入貨件
-    else $('#dlg-batch').close();
+    $('#dlg-batch').close();
   } catch (e) { fail(e); }
 }
 
@@ -446,7 +445,7 @@ function renderItems() {
           <td class="product-cell" data-label="商品"><strong>${esc(s.product)}</strong> ${qtyTag(s.qty)}</td>
           <td class="ship-id" data-label="編號">${esc(s.id)}</td>
           <td class="ship-id small" data-label="物流單">${esc(s.batch) || '<span class="muted">—</span>'}</td>
-          <td data-label="客人" class="email-cell" title="${esc(s.emails.join('\n'))}">${s.emails.length ? esc(s.emails[0]) + (s.emails.length > 1 ? ` +${s.emails.length - 1}` : '') : '<span class="muted">未綁定</span>'}</td>
+          <td data-label="客人" class="email-cell" title="${esc(s.emails.join('\n'))}">${s.emails.length ? esc(s.emails[0]) + (s.emails.length > 1 ? ` +${s.emails.length - 1}` : '') + (s.pending && s.pending.length ? ' <span class="pending-dot" title="有客人尚未登入過">●</span>' : '') : '<span class="muted">未綁定</span>'}</td>
           <td data-label="狀態">${badge(s.status)}</td>
           <td data-label="更新" class="muted nowrap" title="${esc(s.updatedBy)}">${esc(fmtTime(s.updatedAt))}</td>
         </tr>`).join('')}
@@ -502,9 +501,12 @@ $('#form-item').batch.addEventListener('change', e => {
   if (b) setStatus($('#form-item').status, b.status);
 });
 
+const PENDING_TIP = '這個 Email 還沒登入過。客人用此 Gmail 登入後就會看到貨件；若客人說已登入卻看不到，請檢查 Email 是否打錯';
+const pendingTag = (s, e) => (s.pending || []).includes(e) ? `<span class="pending" title="${PENDING_TIP}">尚未登入過</span>` : '';
+
 function renderEmails(s) {
   $('#item-emails').innerHTML = s.emails.length
-    ? s.emails.map(e => `<span class="chip">${esc(e)}<button type="button" data-action="remove-email" data-email="${esc(e)}" aria-label="移除 ${esc(e)}">✕</button></span>`).join('')
+    ? s.emails.map(e => `<span class="chip">${esc(e)}${pendingTag(s, e)}<button type="button" data-action="remove-email" data-email="${esc(e)}" aria-label="移除 ${esc(e)}">✕</button></span>`).join('')
     : '<span class="muted">尚未綁定任何客人</span>';
 }
 
@@ -538,7 +540,6 @@ async function saveItem(next) {
     refreshBatchDialog();
     toast(isNew ? `已新增 ${id}` : `已更新 ${id}`, 'ok');
     if (isNew && next) openItem(null, { batch: payload.batch, status: payload.status });
-    else if (isNew) openItem(id); // 切到編輯模式，可看歷程、管理綁定
     else $('#dlg-item').close();
   } catch (e) { fail(e); }
 }
