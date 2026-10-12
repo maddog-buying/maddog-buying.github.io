@@ -13,6 +13,7 @@
   --warn: #b45309;   --warn-bg: #fef3c7;
   --bad: #b91c1c;    --bad-bg: #fee2e2;
   --mute: #475569;   --mute-bg: #e2e8f0;
+  --accent: #7c3aed; --accent-bg: #ede9fe;
   --shadow: 0 1px 2px rgb(15 23 42 / .06), 0 4px 16px rgb(15 23 42 / .06);
   --radius: 14px;
   color-scheme: light;
@@ -31,6 +32,7 @@
     --warn: #fbbf24; --warn-bg: rgb(245 158 11 / .16);
     --bad: #f87171;  --bad-bg: rgb(239 68 68 / .18);
     --mute: #cbd5e1; --mute-bg: rgb(148 163 184 / .16);
+    --accent: #c4b5fd; --accent-bg: rgb(139 92 246 / .2);
     --shadow: 0 1px 2px rgb(0 0 0 / .3), 0 4px 16px rgb(0 0 0 / .25);
     color-scheme: dark;
   }
@@ -114,6 +116,7 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
 .badge.info { background: var(--info-bg); color: var(--info); }
 .badge.warn { background: var(--warn-bg); color: var(--warn); }
 .badge.bad { background: var(--bad-bg); color: var(--bad); }
+.badge.accent { background: var(--accent-bg); color: var(--accent); }
 
 /* 登入 */
 .login { min-height: 100dvh; display: grid; place-items: center; padding: 24px 16px; }
@@ -174,6 +177,7 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
 .ship-card.tone-info::before { background: var(--info); }
 .ship-card.tone-warn::before { background: var(--warn); }
 .ship-card.tone-bad::before { background: var(--bad); }
+.ship-card.tone-accent::before { background: var(--accent); }
 .card-head { display: flex; justify-content: space-between; align-items: center; margin: -4px -6px 6px 0; }
 .ship-id { font-family: ui-monospace, "Cascadia Mono", Consolas, monospace; font-weight: 600; letter-spacing: .02em; }
 .ship-status .badge { font-size: .95rem; padding: 4px 14px; }
@@ -205,6 +209,7 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
 .dlg-actions { display: flex; gap: 8px; justify-content: flex-end; margin-top: 20px; }
 .spacer { flex: 1; }
 .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 12px; }
+.grid3 { display: grid; grid-template-columns: 1fr 2fr; gap: 0 12px; }
 
 .chips { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 8px; }
 .chip { display: inline-flex; align-items: center; gap: 4px; padding: 3px 4px 3px 10px; border-radius: 999px; background: var(--surface-2); border: 1px solid var(--border); font-size: .85rem; max-width: 100%; word-break: break-all; }
@@ -218,6 +223,7 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
 .timeline li.tone-info::before { background: var(--info); }
 .timeline li.tone-warn::before { background: var(--warn); }
 .timeline li.tone-bad::before { background: var(--bad); }
+.timeline li.tone-accent::before { background: var(--accent); }
 .tl-note { margin: 2px 0; }
 
 /* 提示 */
@@ -253,4 +259,46 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
   .table td.ship-id { font-size: 1rem; padding-right: 32px; }
   .note-cell { max-width: none; white-space: normal; }
   .table.users td.break { word-break: break-all; }
+}
+
+/* 貨件卡片：商品名稱與進度 */
+.product { font-size: 1.05rem; margin: 0; line-height: 1.4; }
+.qty { display: inline-block; font-size: .8rem; font-weight: 600; color: var(--muted); background: var(--surface-2); border: 1px solid var(--border); border-radius: 6px; padding: 0 6px; vertical-align: 1px; }
+.ship-card .ship-id { font-size: .8rem; margin-bottom: 10px; }
+.steps { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 3px; margin: 12px 0 4px; }
+.steps span { height: 6px; border-radius: 3px; background: var(--mute-bg); }
+.steps span.on { background: var(--primary); }
+.tone-ok .steps span.on { background: var(--ok); }
+.tone-accent .steps span.on { background: var(--accent); }
+.steps-label { display: flex; justify-content: space-between; font-size: .8rem; }
+.product-cell { min-width: 160px; }
+
+/* 對話框內 */
+.hint { font-size: .85rem; color: var(--muted); margin: -4px 0 14px; }
+label.check { display: flex; gap: 8px; align-items: flex-start; font-weight: 400; }
+label.check input { margin-top: 2px; flex: none; }
+.section-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; margin-top: 1.25rem; }
+.section-head h3 { margin: 0; }
+.mini-list { list-style: none; margin: 8px 0 0; padding: 0; border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+.mini-list li { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border-bottom: 1px solid var(--border); cursor: pointer; }
+.mini-list li:last-child { border-bottom: 0; }
+.mini-list li:hover { background: var(--surface-2); }
+.mini-list li.plain { cursor: default; }
+.grow { flex: 1; min-width: 0; }
+
+.add-admin { margin-bottom: 16px; box-shadow: none; }
+.add-admin h3 { margin: 0 0 8px; color: var(--text); }
+.add-admin p { margin: 8px 0 0; }
+.login-foot { margin: 16px 0 0; font-size: .8rem; }
+.login-foot a { color: var(--muted); }
+
+@media (max-width: 720px) {
+  .tabs button { font-size: .9rem; }
+  .product-cell { min-width: 0; }
+}
+
+.table td.ship-id { white-space: nowrap; }
+.email-cell { max-width: 200px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+@media (max-width: 720px) {
+  .email-cell { max-width: none; }
 }

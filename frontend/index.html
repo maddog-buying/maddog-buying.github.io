@@ -21,9 +21,10 @@
     <div class="login-card">
       <img src="icons/icon-192.png" alt="" class="login-logo">
       <h1>貨態查詢</h1>
-      <p class="muted">請使用 Google 帳號登入，查詢您綁定的貨物狀態。</p>
+      <p class="muted">請使用 Google 帳號登入，查詢您綁定的貨件狀態。</p>
       <p id="login-msg" class="login-msg" role="alert"></p>
       <div id="login-actions" class="login-actions"></div>
+      <p class="login-foot"><a href="privacy.html">隱私權政策</a></p>
     </div>
   </section>
 
@@ -32,9 +33,10 @@
     <header class="topbar">
       <div class="brand"><img src="icons/icon-192.png" alt=""><span>貨態查詢</span></div>
       <nav id="tabs" class="tabs" hidden>
-        <button data-tab="mine">我的貨態</button>
-        <button data-tab="admin">貨態管理</button>
+        <button data-tab="batches">物流單</button>
+        <button data-tab="items">貨件</button>
         <button data-tab="users">使用者</button>
+        <button data-tab="mine">我的</button>
       </nav>
       <div class="me">
         <span id="me-email" class="me-email"></span>
@@ -45,7 +47,8 @@
     <div id="offline-banner" class="banner" hidden></div>
     <main class="container">
       <div id="tab-mine" class="tab" hidden></div>
-      <div id="tab-admin" class="tab" hidden></div>
+      <div id="tab-batches" class="tab" hidden></div>
+      <div id="tab-items" class="tab" hidden></div>
       <div id="tab-users" class="tab" hidden></div>
     </main>
   </section>
@@ -53,9 +56,9 @@
   <!-- 使用者綁定編號 -->
   <dialog id="dlg-bind" class="dialog">
     <form method="dialog" id="form-bind">
-      <h2>綁定貨態編號</h2>
-      <p class="muted">請輸入貨態編號與管理者提供的綁定碼。</p>
-      <label>貨態編號<input name="id" required autocomplete="off" autocapitalize="characters"></label>
+      <h2>綁定貨件</h2>
+      <p class="muted">請輸入貨件編號與我們提供的綁定碼。</p>
+      <label>貨件編號<input name="id" required autocomplete="off" autocapitalize="characters" placeholder="例如 MD261012-001"></label>
       <label>綁定碼<input name="code" required autocomplete="off" inputmode="numeric"></label>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>取消</button>
@@ -64,33 +67,28 @@
     </form>
   </dialog>
 
-  <!-- 管理者：新增／編輯貨態 -->
-  <dialog id="dlg-ship" class="dialog wide">
-    <form method="dialog" id="form-ship">
-      <h2 id="ship-title">新增貨態</h2>
+  <!-- 管理者：物流單 -->
+  <dialog id="dlg-batch" class="dialog wide">
+    <form method="dialog" id="form-batch">
+      <h2 id="batch-title">新增物流單</h2>
+      <p class="hint">物流單資料只有管理者看得到，客人只會看到貨件編號與商品。</p>
       <div class="grid2">
-        <label>貨態編號<input name="id" required autocomplete="off" autocapitalize="characters"></label>
-        <label>狀態<select name="status" required></select></label>
+        <label>物流編號（上游原始編號）<input name="id" required autocomplete="off" autocapitalize="characters"></label>
+        <label>上游<input name="carrier" list="carrier-list" autocomplete="off" placeholder="例如 順豐、圓通"></label>
       </div>
-      <label>備註<textarea name="note" rows="2" placeholder="會一併記錄在歷程中"></textarea></label>
-      <label>綁定碼
-        <span class="input-row">
-          <input name="bindCode" autocomplete="off" placeholder="留空則使用者無法自行綁定">
-          <button type="button" class="btn sm" data-action="gen-code">產生</button>
-        </span>
-      </label>
-      <div id="ship-extra" hidden>
-        <h3>綁定帳號</h3>
-        <div id="ship-emails" class="chips"></div>
-        <div class="input-row">
-          <input id="bind-email" type="email" placeholder="輸入 Google 帳號 Email（可用逗號分隔多筆）">
-          <button type="button" class="btn sm" data-action="add-email">加入</button>
+      <label>狀態<select name="status" required></select></label>
+      <label class="check"><input type="checkbox" name="syncAll">
+        <span>強制把所有貨件設為此狀態<small class="muted">　預設只推進進度落後的貨件，已寄出／完成的不會倒退</small></span></label>
+      <label>內部備註<textarea name="note" rows="2" placeholder="客人看不到"></textarea></label>
+      <div id="batch-extra" hidden>
+        <div class="section-head">
+          <h3 id="batch-items-title">貨件</h3>
+          <button type="button" class="btn sm" data-action="add-item-to-batch">＋ 新增貨件到此物流單</button>
         </div>
-        <h3>歷程</h3>
-        <ol id="ship-history" class="timeline"></ol>
+        <ul id="batch-items" class="mini-list"></ul>
       </div>
       <div class="dlg-actions">
-        <button type="button" class="btn danger ghost" data-action="delete-ship" id="btn-delete">刪除</button>
+        <button type="button" class="btn danger ghost" data-action="delete-batch" id="btn-delete-batch">刪除</button>
         <span class="spacer"></span>
         <button type="button" class="btn ghost" data-close>關閉</button>
         <button class="btn primary" value="ok">儲存</button>
@@ -98,13 +96,54 @@
     </form>
   </dialog>
 
-  <!-- 管理者：批次更新 -->
-  <dialog id="dlg-batch" class="dialog">
-    <form method="dialog" id="form-batch">
+  <!-- 管理者：貨件 -->
+  <dialog id="dlg-item" class="dialog wide">
+    <form method="dialog" id="form-item">
+      <h2 id="item-title">新增貨件</h2>
+      <label>商品名稱<input name="product" required autocomplete="off" placeholder="客人會看到這個名稱"></label>
+      <div class="grid3">
+        <label>數量<input name="qty" type="number" min="1" value="1" inputmode="numeric"></label>
+        <label class="span2">物流單<select name="batch"></select></label>
+      </div>
+      <div class="grid2">
+        <label>貨件編號<input name="id" autocomplete="off" autocapitalize="characters" placeholder="留空自動產生"></label>
+        <label>狀態<select name="status" required></select></label>
+      </div>
+      <label>備註<textarea name="note" rows="2" placeholder="客人看得到，例如國內宅配單號"></textarea></label>
+      <label>綁定碼
+        <span class="input-row">
+          <input name="bindCode" autocomplete="off" placeholder="留空則客人無法自行綁定">
+          <button type="button" class="btn sm" data-action="gen-code">產生</button>
+        </span>
+      </label>
+      <label id="item-new-emails">客人 Email<input name="emails" autocomplete="off" placeholder="客人的 Google 帳號（可用逗號分隔多筆，可留空）"></label>
+      <div id="item-extra" hidden>
+        <h3>綁定的客人</h3>
+        <div id="item-emails" class="chips"></div>
+        <div class="input-row">
+          <input id="bind-email" type="email" placeholder="輸入 Google 帳號 Email（可用逗號分隔多筆）">
+          <button type="button" class="btn sm" data-action="add-email">加入</button>
+        </div>
+        <h3>歷程</h3>
+        <ol id="item-history" class="timeline"></ol>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn danger ghost" data-action="delete-item" id="btn-delete-item">刪除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>關閉</button>
+        <button class="btn" value="next" id="btn-save-next">儲存並新增下一筆</button>
+        <button class="btn primary" value="ok">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 管理者：批次更新貨件 -->
+  <dialog id="dlg-bulk" class="dialog">
+    <form method="dialog" id="form-bulk">
       <h2>批次更新狀態</h2>
-      <p class="muted" id="batch-count"></p>
+      <p class="muted" id="bulk-count"></p>
       <label>狀態<select name="status" required></select></label>
-      <label>備註<textarea name="note" rows="2"></textarea></label>
+      <label>備註<textarea name="note" rows="2" placeholder="客人看得到；留空會清除原本的備註"></textarea></label>
       <div class="dlg-actions">
         <button type="button" class="btn ghost" data-close>取消</button>
         <button class="btn primary" value="ok">更新</button>
@@ -112,6 +151,7 @@
     </form>
   </dialog>
 
+  <datalist id="carrier-list"></datalist>
   <div id="toasts" class="toasts" aria-live="polite"></div>
 
   <script src="config.js"></script>

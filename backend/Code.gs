@@ -4,29 +4,42 @@
  * 部署方式：在 Google 試算表中「擴充功能 → Apps Script」，貼上本檔，
  * 先執行一次 setup()，再「部署 → 新增部署作業 → 網頁應用程式」。
  * 詳細步驟請見 README.md。
+ *
+ * 資料模型：
+ *   物流單（上游原始物流編號，只有管理者看得到）1 ── N 貨件（自編統一編號＋商品，綁定給客人）
+ *   更新物流單狀態時，會把底下「進度落後」的貨件一併推進到該狀態。
  */
 
 const CONFIG = {
   // Google Cloud Console 建立的 OAuth 用戶端 ID（需與前端 config.js 相同）
   GOOGLE_CLIENT_ID: '673711843673-78ota4tlqcsa0ghgp1gk2r2pi8t74pd3.apps.googleusercontent.com',
-  // 可選的貨態狀態，依需求增減
-  STATUSES: ['已建立', '已收件', '處理中', '已出貨', '運送中', '配送中', '已送達', '異常', '已取消'],
+  // 貨件編號前綴，自動產生格式為 MD261012-001
+  ID_PREFIX: 'MD',
+  TIMEZONE: 'Asia/Taipei',
+  // 狀態依流程先後排列
+  STATUSES: ['倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'],
 };
 
-// 每張工作表的欄位：[程式用 key, 試算表標題]
+// 每張工作表的欄位：[程式用 key, 試算表標題]。新欄位請加在最後，避免舊資料錯位。
 const SHEETS = {
-  shipments: {
-    name: '貨態',
-    cols: [['id', '貨態編號'], ['status', '目前狀態'], ['note', '備註'], ['bindCode', '綁定碼'],
+  batches: {
+    name: '物流單',
+    cols: [['id', '物流編號'], ['carrier', '上游'], ['status', '狀態'], ['note', '內部備註'],
+           ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間']],
+  },
+  items: {
+    name: '貨件',
+    cols: [['id', '貨件編號'], ['product', '商品名稱'], ['qty', '數量'], ['batch', '物流編號'],
+           ['status', '目前狀態'], ['note', '備註（客戶可見）'], ['bindCode', '綁定碼'],
            ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間']],
   },
   history: {
     name: '歷程',
-    cols: [['time', '時間'], ['id', '貨態編號'], ['status', '狀態'], ['note', '備註'], ['by', '操作者']],
+    cols: [['time', '時間'], ['id', '貨件編號'], ['status', '狀態'], ['note', '備註'], ['by', '操作者'], ['batch', '物流編號']],
   },
   bindings: {
     name: '綁定',
-    cols: [['id', '貨態編號'], ['email', 'Email'], ['boundAt', '綁定時間'], ['boundBy', '綁定者']],
+    cols: [['id', '貨件編號'], ['email', 'Email'], ['boundAt', '綁定時間'], ['boundBy', '綁定者']],
   },
   users: {
     name: '使用者',
@@ -38,7 +51,7 @@ const SHEETS = {
 /* 初始化                                                              */
 /* ------------------------------------------------------------------ */
 
-/** 第一次使用時手動執行：建立工作表，並把執行者設為管理者 */
+/** 第一次使用（或更新版本後）手動執行：建立／更新工作表，並把執行者設為管理者 */
 function setup() {
   const ss = SpreadsheetApp.getActive();
   Object.values(SHEETS).forEach(def => {
@@ -46,19 +59,17 @@ function setup() {
     if (!sh) sh = ss.insertSheet(def.name);
     sh.getRange(1, 1, 1, def.cols.length).setValues([def.cols.map(c => c[1])]).setFontWeight('bold');
     sh.setFrozenRows(1);
-    // 文字欄位設為純文字，避免編號開頭的 0 被吃掉
-    def.cols.forEach(([key], i) => {
-      if (!/At$|^time$/.test(key)) sh.getRange(2, i + 1, sh.getMaxRows() - 1, 1).setNumberFormat('@');
-    });
   });
-  const blank = ss.getSheetByName('工作表1') || ss.getSheetByName('Sheet1');
-  if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  ['工作表1', 'Sheet1'].forEach(n => {
+    const blank = ss.getSheetByName(n);
+    if (blank && blank.getLastRow() === 0 && ss.getSheets().length > 1) ss.deleteSheet(blank);
+  });
 
   const email = Session.getEffectiveUser().getEmail().toLowerCase();
-  const users = readAll_('users');
-  if (!users.some(u => u.email === email)) {
+  if (!readAll_('users').some(u => u.email === email)) {
     append_('users', { email, name: '', role: 'admin', createdAt: new Date(), lastLogin: '' });
   }
+  if (ss.getSheetByName('貨態')) Logger.log('提醒：舊版的「貨態」工作表已不再使用，確認不需要後可以刪除。');
   Logger.log('完成！管理者：' + email);
 }
 
@@ -90,20 +101,25 @@ function doPost(e) {
 
 const ROUTES = {
   // 所有登入者
-  me:            { fn: me_ },
-  myShipments:   { fn: myShipments_ },
-  bindByCode:    { fn: bindByCode_, write: true },
-  unbindMine:    { fn: unbindMine_, write: true },
-  // 管理者
-  listShipments: { fn: listShipments_, admin: true },
-  saveShipment:  { fn: saveShipment_, admin: true, write: true },
-  batchStatus:   { fn: batchStatus_, admin: true, write: true },
-  deleteShipment:{ fn: deleteShipment_, admin: true, write: true },
-  history:       { fn: history_, admin: true },
-  bind:          { fn: bind_, admin: true, write: true },
-  unbind:        { fn: unbind_, admin: true, write: true },
-  listUsers:     { fn: listUsers_, admin: true },
-  setRole:       { fn: setRole_, admin: true, write: true },
+  me:             { fn: me_ },
+  myShipments:    { fn: myShipments_ },
+  bindByCode:     { fn: bindByCode_, write: true },
+  unbindMine:     { fn: unbindMine_, write: true },
+  // 管理者：物流單
+  listBatches:    { fn: listBatches_, admin: true },
+  saveBatch:      { fn: saveBatch_, admin: true, write: true },
+  deleteBatch:    { fn: deleteBatch_, admin: true, write: true },
+  // 管理者：貨件
+  listShipments:  { fn: listShipments_, admin: true },
+  saveShipment:   { fn: saveShipment_, admin: true, write: true },
+  batchStatus:    { fn: batchStatus_, admin: true, write: true },
+  deleteShipment: { fn: deleteShipment_, admin: true, write: true },
+  history:        { fn: history_, admin: true },
+  bind:           { fn: bind_, admin: true, write: true },
+  unbind:         { fn: unbind_, admin: true, write: true },
+  // 管理者：使用者
+  listUsers:      { fn: listUsers_, admin: true },
+  setRole:        { fn: setRole_, admin: true, write: true },
 };
 
 /* ------------------------------------------------------------------ */
@@ -144,7 +160,7 @@ function touchUser_(info) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 一般使用者                                                          */
+/* 一般使用者（不會回傳物流編號、上游等內部資料）                        */
 /* ------------------------------------------------------------------ */
 
 function me_(p, user) {
@@ -152,21 +168,23 @@ function me_(p, user) {
 }
 
 function myShipments_(p, user) {
-  const ids = readAll_('bindings').filter(b => b.email === user.email).map(b => b.id);
-  const map = indexBy_(readAll_('shipments'), 'id');
-  return unique_(ids).map(id => map[id]
-    ? { id, status: map[id].status, note: map[id].note, updatedAt: iso_(map[id].updatedAt) }
-    : { id, status: null, note: '', updatedAt: null });
+  const ids = unique_(readAll_('bindings').filter(b => b.email === user.email).map(b => b.id));
+  const map = indexBy_(readAll_('items'), 'id');
+  return ids.map(id => {
+    const s = map[id];
+    return s
+      ? { id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: iso_(s.updatedAt) }
+      : { id, product: '', qty: '', status: null, note: '', updatedAt: null };
+  });
 }
 
 function bindByCode_(p, user) {
   const id = normId_(p.id);
-  const code = String(p.code || '').trim();
-  const s = readAll_('shipments').find(x => x.id === id);
+  const code = str_(p.code);
+  const s = readAll_('items').find(x => x.id === id);
   // 不論編號不存在或綁定碼錯誤都回相同訊息，避免被猜編號
-  if (!s || !s.bindCode || String(s.bindCode) !== code) throw apiError_(400, '貨態編號或綁定碼錯誤');
-  const exists = readAll_('bindings').some(b => b.id === id && b.email === user.email);
-  if (!exists) append_('bindings', { id, email: user.email, boundAt: new Date(), boundBy: user.email });
+  if (!s || !s.bindCode || String(s.bindCode) !== code) throw apiError_(400, '貨件編號或綁定碼錯誤');
+  bindEmails_(id, [user.email], user);
   return { id };
 }
 
@@ -176,62 +194,106 @@ function unbindMine_(p, user) {
 }
 
 /* ------------------------------------------------------------------ */
-/* 管理者                                                              */
+/* 管理者：物流單                                                      */
+/* ------------------------------------------------------------------ */
+
+function listBatches_() {
+  const counts = {};
+  readAll_('items').forEach(i => { if (i.batch) counts[i.batch] = (counts[i.batch] || 0) + 1; });
+  return readAll_('batches').map(b => ({
+    id: b.id, carrier: b.carrier, status: b.status, note: b.note,
+    updatedAt: iso_(b.updatedAt), updatedBy: b.updatedBy, createdAt: iso_(b.createdAt),
+    itemCount: counts[b.id] || 0,
+  }));
+}
+
+function saveBatch_(p, user) {
+  const id = normId_(p.id);
+  if (!id) throw apiError_(400, '請輸入物流編號');
+  const status = validStatus_(p.status);
+  const carrier = str_(p.carrier), note = str_(p.note), now = new Date();
+  const ex = readAll_('batches').find(b => b.id === id);
+  let statusChanged = true;
+  if (p.mode === 'create') {
+    if (ex) throw apiError_(409, '物流編號已存在：' + id);
+    append_('batches', { id, carrier, status, note, updatedAt: now, updatedBy: user.email, createdAt: now });
+  } else {
+    if (!ex) throw apiError_(404, '找不到物流編號：' + id);
+    statusChanged = ex.status !== status;
+    update_('batches', ex._row, Object.assign({ carrier, note },
+      statusChanged ? { status, updatedAt: now, updatedBy: user.email } : {}));
+  }
+  // 狀態有變（或要求強制同步）時，帶動底下的貨件
+  const updated = statusChanged || p.syncAll
+    ? setItemsStatus_(readAll_('items').filter(i => i.batch === id), status, '（物流單更新）', user, now, !p.syncAll)
+    : 0;
+  return { id, updated };
+}
+
+function deleteBatch_(p) {
+  const id = normId_(p.id);
+  const n = readAll_('items').filter(i => i.batch === id).length;
+  if (n) throw apiError_(409, `此物流單還有 ${n} 筆貨件，請先移到其他物流單或刪除`);
+  removeWhere_('batches', b => b.id === id);
+  return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* 管理者：貨件                                                        */
 /* ------------------------------------------------------------------ */
 
 function listShipments_() {
   const byId = {};
   readAll_('bindings').forEach(b => (byId[b.id] = byId[b.id] || []).push(b.email));
-  return readAll_('shipments').map(s => ({
-    id: s.id, status: s.status, note: s.note, bindCode: s.bindCode,
+  return readAll_('items').map(s => ({
+    id: s.id, product: s.product, qty: s.qty, batch: s.batch, status: s.status, note: s.note, bindCode: s.bindCode,
     updatedAt: iso_(s.updatedAt), updatedBy: s.updatedBy, createdAt: iso_(s.createdAt),
     emails: unique_(byId[s.id] || []),
   }));
 }
 
 function saveShipment_(p, user) {
-  const id = normId_(p.id);
-  if (!id) throw apiError_(400, '請輸入貨態編號');
-  const status = String(p.status || '').trim();
-  if (!status) throw apiError_(400, '請選擇狀態');
-  const note = String(p.note || '').trim();
-  const bindCode = String(p.bindCode || '').trim();
-  const now = new Date();
-  const existing = readAll_('shipments').find(s => s.id === id);
+  const product = str_(p.product);
+  if (!product) throw apiError_(400, '請輸入商品名稱');
+  const qty = Math.max(1, parseInt(p.qty, 10) || 1);
+  const batch = normId_(p.batch);
+  if (batch && !readAll_('batches').some(b => b.id === batch)) throw apiError_(404, '找不到物流編號：' + batch);
+  const status = validStatus_(p.status);
+  const note = str_(p.note), bindCode = str_(p.bindCode), now = new Date();
+  const items = readAll_('items');
 
   if (p.mode === 'create') {
-    if (existing) throw apiError_(409, '貨態編號已存在：' + id);
-    append_('shipments', { id, status, note, bindCode, updatedAt: now, updatedBy: user.email, createdAt: now });
-    append_('history', { time: now, id, status, note, by: user.email });
-  } else {
-    if (!existing) throw apiError_(404, '找不到貨態編號：' + id);
-    const changed = existing.status !== status || existing.note !== note;
-    update_('shipments', existing._row, changed
-      ? { status, note, bindCode, updatedAt: now, updatedBy: user.email }
-      : { bindCode });
-    if (changed) append_('history', { time: now, id, status, note, by: user.email });
+    const id = normId_(p.id) || nextId_(items);
+    if (items.some(s => s.id === id)) throw apiError_(409, '貨件編號已存在：' + id);
+    append_('items', { id, product, qty, batch, status, note, bindCode, updatedAt: now, updatedBy: user.email, createdAt: now });
+    append_('history', { time: now, id, status, note, by: user.email, batch });
+    if (p.emails && p.emails.length) bindEmails_(id, p.emails, user);
+    return { id };
   }
+
+  const id = normId_(p.id);
+  const ex = items.find(s => s.id === id);
+  if (!ex) throw apiError_(404, '找不到貨件編號：' + id);
+  const changed = ex.status !== status || ex.note !== note;
+  update_('items', ex._row, Object.assign({ product, qty, batch, bindCode },
+    changed ? { status, note, updatedAt: now, updatedBy: user.email } : {}));
+  if (changed) append_('history', { time: now, id, status, note, by: user.email, batch });
   return { id };
 }
 
 function batchStatus_(p, user) {
-  const ids = unique_((p.ids || []).map(normId_));
-  const status = String(p.status || '').trim();
-  const note = String(p.note || '').trim();
-  if (!ids.length || !status) throw apiError_(400, '請選擇貨態與狀態');
-  const now = new Date();
-  const want = new Set(ids);
-  const rows = readAll_('shipments').filter(s => want.has(s.id));
-  rows.forEach(s => update_('shipments', s._row, { status, note, updatedAt: now, updatedBy: user.email }));
-  appendMany_('history', rows.map(s => ({ time: now, id: s.id, status, note, by: user.email })));
-  return { updated: rows.length };
+  const want = new Set((p.ids || []).map(normId_));
+  if (!want.size) throw apiError_(400, '請選擇貨件');
+  const status = validStatus_(p.status);
+  const items = readAll_('items').filter(s => want.has(s.id));
+  return { updated: setItemsStatus_(items, status, str_(p.note), user, new Date(), false, true) };
 }
 
 function deleteShipment_(p, user) {
   const id = normId_(p.id);
-  removeWhere_('shipments', s => s.id === id);
+  removeWhere_('items', s => s.id === id);
   removeWhere_('bindings', b => b.id === id);
-  append_('history', { time: new Date(), id, status: '（已刪除）', note: '', by: user.email });
+  append_('history', { time: new Date(), id, status: '（已刪除）', note: '', by: user.email, batch: '' });
   return true;
 }
 
@@ -244,13 +306,8 @@ function history_(p) {
 
 function bind_(p, user) {
   const id = normId_(p.id);
-  if (!readAll_('shipments').some(s => s.id === id)) throw apiError_(404, '找不到貨態編號：' + id);
-  const emails = unique_((p.emails || []).map(e => String(e).trim().toLowerCase()).filter(Boolean));
-  const bad = emails.filter(e => !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e));
-  if (bad.length) throw apiError_(400, 'Email 格式錯誤：' + bad.join(', '));
-  const have = new Set(readAll_('bindings').filter(b => b.id === id).map(b => b.email));
-  const now = new Date();
-  appendMany_('bindings', emails.filter(e => !have.has(e)).map(email => ({ id, email, boundAt: now, boundBy: user.email })));
+  if (!readAll_('items').some(s => s.id === id)) throw apiError_(404, '找不到貨件編號：' + id);
+  bindEmails_(id, p.emails || [], user);
   return true;
 }
 
@@ -260,6 +317,10 @@ function unbind_(p) {
   removeWhere_('bindings', b => b.id === id && b.email === email);
   return true;
 }
+
+/* ------------------------------------------------------------------ */
+/* 管理者：使用者                                                      */
+/* ------------------------------------------------------------------ */
 
 function listUsers_() {
   const counts = {};
@@ -271,13 +332,56 @@ function listUsers_() {
 }
 
 function setRole_(p, user) {
-  const email = String(p.email || '').toLowerCase();
+  const email = String(p.email || '').trim().toLowerCase();
+  if (!isEmail_(email)) throw apiError_(400, 'Email 格式錯誤：' + email);
   const role = p.role === 'admin' ? 'admin' : 'user';
   if (email === user.email && role !== 'admin') throw apiError_(400, '不能移除自己的管理者權限');
   const u = readAll_('users').find(x => x.email === email);
   if (u) update_('users', u._row, { role });
   else append_('users', { email, name: '', role, createdAt: new Date(), lastLogin: '' });
   return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* 共用邏輯                                                            */
+/* ------------------------------------------------------------------ */
+
+/**
+ * 批次設定貨件狀態並寫入歷程。
+ * onlyForward = true 時只推進「進度落後」的貨件，已經寄出／完成的不會被倒退。
+ */
+function setItemsStatus_(items, status, note, user, now, onlyForward, setNote) {
+  const rank = s => CONFIG.STATUSES.indexOf(s);
+  const target = items.filter(i => !onlyForward || rank(i.status) < rank(status));
+  updateMany_('items', target.map(i => ({
+    row: i._row,
+    patch: Object.assign({ status, updatedAt: now, updatedBy: user.email }, setNote ? { note } : {}),
+  })));
+  appendMany_('history', target.map(i => ({ time: now, id: i.id, status, note, by: user.email, batch: i.batch })));
+  return target.length;
+}
+
+function bindEmails_(id, emails, user) {
+  const list = unique_(emails.map(e => String(e).trim().toLowerCase()).filter(Boolean));
+  const bad = list.filter(e => !isEmail_(e));
+  if (bad.length) throw apiError_(400, 'Email 格式錯誤：' + bad.join(', '));
+  const have = new Set(readAll_('bindings').filter(b => b.id === id).map(b => b.email));
+  const now = new Date();
+  appendMany_('bindings', list.filter(e => !have.has(e)).map(email => ({ id, email, boundAt: now, boundBy: user.email })));
+}
+
+/** 產生當天的下一個貨件編號，例如 MD261012-003 */
+function nextId_(items) {
+  const prefix = CONFIG.ID_PREFIX + Utilities.formatDate(new Date(), CONFIG.TIMEZONE, 'yyMMdd') + '-';
+  const max = items.filter(s => s.id.indexOf(prefix) === 0)
+    .reduce((m, s) => Math.max(m, parseInt(s.id.slice(prefix.length), 10) || 0), 0);
+  return prefix + String(max + 1).padStart(3, '0');
+}
+
+function validStatus_(s) {
+  s = str_(s);
+  if (CONFIG.STATUSES.indexOf(s) < 0) throw apiError_(400, '無效的狀態：' + s);
+  return s;
 }
 
 /* ------------------------------------------------------------------ */
@@ -299,13 +403,10 @@ function readAll_(key) {
     const o = { _row: i + 2 };
     cols.forEach(([k], j) => (o[k] = r[j] instanceof Date ? r[j] : String(r[j]).trim()));
     if (o.id !== undefined) o.id = normId_(o.id);
+    if (o.batch !== undefined) o.batch = normId_(o.batch);
     if (o.email !== undefined) o.email = o.email.toLowerCase();
     return o;
   }).filter(o => Object.keys(o).some(k => k !== '_row' && o[k] !== ''));
-}
-
-function toRow_(key, obj) {
-  return SHEETS[key].cols.map(([k]) => cell_(obj[k]));
 }
 
 function append_(key, obj) {
@@ -315,15 +416,26 @@ function append_(key, obj) {
 function appendMany_(key, objs) {
   if (!objs.length) return;
   const sh = sheet_(key);
-  sh.getRange(sh.getLastRow() + 1, 1, objs.length, SHEETS[key].cols.length)
-    .setValues(objs.map(o => toRow_(key, o)));
+  const cols = SHEETS[key].cols;
+  sh.getRange(sh.getLastRow() + 1, 1, objs.length, cols.length)
+    .setValues(objs.map(o => cols.map(([k]) => cell_(o[k]))));
 }
 
 function update_(key, row, patch) {
+  updateMany_(key, [{ row, patch }]);
+}
+
+/** 一次讀寫整個資料範圍，避免逐格寫入太慢 */
+function updateMany_(key, changes) {
+  if (!changes.length) return;
   const sh = sheet_(key);
-  SHEETS[key].cols.forEach(([k], i) => {
-    if (k in patch) sh.getRange(row, i + 1).setValue(cell_(patch[k]));
-  });
+  const cols = SHEETS[key].cols;
+  const range = sh.getRange(2, 1, sh.getLastRow() - 1, cols.length);
+  const vals = range.getValues();
+  changes.forEach(({ row, patch }) => cols.forEach(([k], j) => {
+    if (k in patch) vals[row - 2][j] = patch[k];
+  }));
+  range.setValues(vals.map(r => r.map(cell_)));
 }
 
 function removeWhere_(key, pred) {
@@ -341,14 +453,20 @@ function withLock_(fn) {
   try { return fn(); } finally { lock.releaseLock(); }
 }
 
-/** 防止使用者輸入被當成公式執行 */
+/**
+ * 寫入儲存格前的處理：
+ * - 開頭是 = + - @ 的文字加上 '，避免被當成公式
+ * - 數字開頭的文字（例如物流編號 0012345）也加上 '，避免被轉成數字而遺失開頭的 0
+ */
 function cell_(v) {
   if (v === undefined || v === null) return '';
-  if (typeof v === 'string' && /^[=+\-@]/.test(v)) return "'" + v;
+  if (typeof v === 'string' && /^[=+\-@\d]/.test(v)) return "'" + v;
   return v;
 }
 
-function normId_(v) { return String(v || '').trim().toUpperCase(); }
+function str_(v) { return String(v == null ? '' : v).trim(); }
+function normId_(v) { return str_(v).toUpperCase(); }
+function isEmail_(e) { return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e); }
 function iso_(d) { return d instanceof Date ? d.toISOString() : (d || null); }
 function unique_(a) { return Array.from(new Set(a)); }
 function indexBy_(arr, k) { const m = {}; arr.forEach(o => (m[o[k]] = o)); return m; }
