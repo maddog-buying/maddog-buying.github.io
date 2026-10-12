@@ -1,6 +1,6 @@
 // 示範模式用的假後端：與 backend/Code.gs 的 API 行為一致，資料存在 localStorage。
 window.MockApi = (() => {
-  const KEY = 'st_demo_db_v2';
+  const KEY = 'st_demo_db_v3';
   const STATUSES = ['倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
   const ADMIN = 'admin@demo.local', USER = 'user@demo.local';
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
@@ -11,9 +11,9 @@ window.MockApi = (() => {
 
   function seed() {
     const db = { batches: [], items: [], history: [], bindings: [], users: [
-      { email: ADMIN, name: '示範管理者', role: 'admin', createdAt: ago(500), lastLogin: ago(1) },
-      { email: USER, name: '示範使用者', role: 'user', createdAt: ago(300), lastLogin: ago(2) },
-      { email: 'amy@demo.local', name: 'Amy', role: 'user', createdAt: ago(200), lastLogin: ago(30) },
+      { email: ADMIN, name: '示範管理者', nickname: '', role: 'admin', createdAt: ago(500), lastLogin: ago(1) },
+      { email: USER, name: 'Demo User', nickname: '老客戶 小王', role: 'user', createdAt: ago(300), lastLogin: ago(2) },
+      { email: 'amy@demo.local', name: 'Amy Chen', nickname: '', role: 'user', createdAt: ago(200), lastLogin: ago(30) },
     ] };
     const batch = (id, carrier, status, h, note = '') =>
       db.batches.push({ id, carrier, status, note, updatedAt: ago(h), updatedBy: ADMIN, createdAt: ago(h + 200) });
@@ -170,8 +170,8 @@ window.MockApi = (() => {
       const role = p.role === 'admin' || p.role === 'user' ? p.role : null;
       if (email === u.email && role === 'user') throw err(400, '不能移除自己的管理者權限');
       const x = db.users.find(y => y.email === email);
-      if (x) { if ('name' in p) x.name = str(p.name); if (role) x.role = role; }
-      else db.users.push({ email, name: str(p.name), role: role || 'user', createdAt: now(), lastLogin: '' });
+      if (x) { if ('nickname' in p) x.nickname = str(p.nickname); if (role) x.role = role; }
+      else db.users.push({ email, name: '', nickname: str(p.nickname), role: role || 'user', createdAt: now(), lastLogin: '' });
       return { email };
     },
     setRole: (p, u, db) => {

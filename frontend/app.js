@@ -262,7 +262,10 @@ function relTime(iso) {
 const match = (q, ...fields) => !q || fields.some(f => String(f || '').toLowerCase().includes(q.toLowerCase()));
 const byUpdated = (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '');
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
-const custName = email => (state.users.find(u => u.email === email) || {}).name || '';
+const userOf = email => state.users.find(u => u.email === email) || {};
+// 管理者畫面優先顯示暱稱，沒設定暱稱時才用對方的 Google 名稱
+const displayName = u => u.nickname || u.name || '';
+const custName = email => displayName(userOf(email));
 const custShort = email => custName(email) || email;
 
 function statusFilter(model, list) {
@@ -533,8 +536,8 @@ function pickerOptions() {
   const q = $('#cust-q').value.trim().toLowerCase();
   const taken = new Set(boundEmails());
   return state.users
-    .filter(u => !taken.has(u.email) && (!q || (u.name || '').toLowerCase().includes(q) || u.email.includes(q)))
-    .sort((a, b) => (a.name || '￿').localeCompare(b.name || '￿', 'zh-Hant') || a.email.localeCompare(b.email))
+    .filter(u => !taken.has(u.email) && (!q || [u.nickname, u.name, u.email].some(v => (v || '').toLowerCase().includes(q))))
+    .sort((a, b) => (displayName(a) || '\uffff').localeCompare(displayName(b) || '\uffff', 'zh-Hant') || a.email.localeCompare(b.email))
     .slice(0, 50);
 }
 
@@ -547,7 +550,7 @@ function renderPicker(open = true) {
   pickIdx = Math.max(0, Math.min(pickIdx, opts.length - 1));
   ul.innerHTML = opts.length
     ? opts.map((u, i) => `<li role="option" data-pick="${esc(u.email)}" class="${i === pickIdx ? 'active' : ''}">
-        <span class="pick-name">${u.name ? esc(u.name) : '<span class="muted">（未命名）</span>'}${u.role === 'admin' ? ' <span class="badge info">管理者</span>' : ''}</span>
+        <span class="pick-name">${u.nickname ? esc(u.nickname) : `<span class="muted">${u.name ? esc(u.name) + '（未設定暱稱）' : '（未設定暱稱）'}</span>`}${u.role === 'admin' ? ' <span class="badge info">管理者</span>' : ''}</span>
         <span class="pick-email">${esc(u.email)}</span></li>`).join('')
     : isEmail(typed)
       ? `<li role="option" data-pick="${esc(typed)}" class="active"><span class="pick-name">＋ 綁定新客人</span><span class="pick-email">${esc(typed)}</span></li>`
@@ -657,26 +660,27 @@ function genCode() {
 function renderUsers() {
   const el = $('#tab-users');
   const users = [...state.users].sort((a, b) => a.role !== b.role ? (a.role === 'admin' ? -1 : 1)
-    : (a.name || '￿').localeCompare(b.name || '￿', 'zh-Hant') || a.email.localeCompare(b.email));
+    : (displayName(a) || '\uffff').localeCompare(displayName(b) || '\uffff', 'zh-Hant') || a.email.localeCompare(b.email));
   const admins = users.filter(u => u.role === 'admin').length;
   el.innerHTML = `
     <div class="card add-admin">
       <h3>新增客戶／管理者</h3>
       <div class="input-row wrap">
-        <input id="nu-name" placeholder="名稱" autocomplete="off">
+        <input id="nu-name" placeholder="暱稱（方便你辨識）" autocomplete="off">
         <input id="nu-email" type="email" placeholder="Google 帳號 Email" autocomplete="off">
         <select id="nu-role"><option value="user">客戶</option><option value="admin">管理者</option></select>
         <button class="btn primary" data-action="add-user">新增</button>
       </div>
-      <p class="muted small">對方不需要先登入過。名稱會顯示在貨件的客人下拉選單中，可隨時在下方表格修改。目前共 ${admins} 位管理者。</p>
+      <p class="muted small">對方不需要先登入過。暱稱只有管理者看得到，會顯示在貨件的客人下拉選單中，可隨時在下方表格修改；Google 名稱是對方登入時自動帶入的。目前共 ${admins} 位管理者。</p>
     </div>
     <div class="toolbar"><p class="muted grow">客人第一次用 Google 登入後也會自動出現在這裡。</p>
       <button class="btn" data-action="refresh" title="重新整理">↻</button></div>
     ${users.length ? `<table class="table users">
-      <thead><tr><th>Email</th><th>名稱</th><th>角色</th><th>綁定數</th><th>最後登入</th></tr></thead>
+      <thead><tr><th>Email</th><th>暱稱（管理者用）</th><th>Google 名稱</th><th>角色</th><th>綁定數</th><th>最後登入</th></tr></thead>
       <tbody>${users.map(u => `<tr>
         <td data-label="Email" class="break">${esc(u.email)}</td>
-        <td data-label="名稱"><input class="inline-input" data-action="rename" data-email="${esc(u.email)}" value="${esc(u.name)}" placeholder="未命名" aria-label="${esc(u.email)} 的名稱"></td>
+        <td data-label="暱稱"><input class="inline-input" data-action="rename" data-email="${esc(u.email)}" value="${esc(u.nickname)}" placeholder="點此設定暱稱" aria-label="${esc(u.email)} 的暱稱"></td>
+        <td data-label="Google 名稱">${esc(u.name) || `<span class="muted">${u.lastLogin ? '—' : '尚未登入'}</span>`}</td>
         <td data-label="角色"><select data-action="set-role" data-email="${esc(u.email)}" ${u.email === state.user.email ? 'disabled title="不能變更自己的角色"' : ''}>
           <option value="user" ${u.role !== 'admin' ? 'selected' : ''}>客戶</option>
           <option value="admin" ${u.role === 'admin' ? 'selected' : ''}>管理者</option></select></td>
@@ -685,12 +689,12 @@ function renderUsers() {
       </tr>`).join('')}</tbody></table>` : state.loaded.users ? '<div class="empty"><p>沒有使用者</p></div>' : LOADING}`;
 }
 
-async function renameUser(email, name) {
+async function renameUser(email, nickname) {
   try {
-    await api('saveUser', { email, name });
+    await api('saveUser', { email, nickname });
     const u = state.users.find(x => x.email === email);
-    if (u) u.name = name;
-    toast('已更新名稱', 'ok');
+    if (u) u.nickname = nickname;
+    toast('已更新暱稱', 'ok');
   } catch (err) { fail(err); renderUsers(); }
 }
 
@@ -812,7 +816,7 @@ document.addEventListener('click', async e => {
       const name = $('#new-cust-name').value.trim(), email = $('#new-cust-email').value.trim();
       if (!isEmail(email)) { toast('請輸入正確的 Gmail', 'error'); return $('#new-cust-email').focus(); }
       try {
-        const r = await api('saveUser', { email, name });
+        const r = await api('saveUser', { email, nickname: name });
         state.users = await api('listUsers');
         $('#new-cust-name').value = $('#new-cust-email').value = '';
         $('#new-cust').hidden = true;
@@ -836,7 +840,7 @@ document.addEventListener('click', async e => {
       const name = $('#nu-name').value.trim(), email = $('#nu-email').value.trim(), role = $('#nu-role').value;
       if (!email) return $('#nu-email').focus();
       try {
-        await api('saveUser', { email, name, role });
+        await api('saveUser', { email, nickname: name, role });
         toast(`已新增${role === 'admin' ? '管理者' : '客戶'} ${name || email}`, 'ok');
         state.users = await api('listUsers');
       } catch (err) { fail(err); }

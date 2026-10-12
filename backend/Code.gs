@@ -43,7 +43,9 @@ const SHEETS = {
   },
   users: {
     name: '使用者',
-    cols: [['email', 'Email'], ['name', '名稱'], ['role', '角色'], ['createdAt', '建立時間'], ['lastLogin', '最後登入']],
+    // name = 使用者自己的 Google 名稱（登入時更新）；nickname = 管理者設定的暱稱（使用者看不到）
+    cols: [['email', 'Email'], ['name', 'Google 名稱'], ['role', '角色'], ['createdAt', '建立時間'], ['lastLogin', '最後登入'],
+           ['nickname', '暱稱（管理者用）']],
   },
 };
 
@@ -69,6 +71,10 @@ function setup() {
   if (!readAll_('users').some(u => u.email === email)) {
     append_('users', { email, name: '', role: 'admin', createdAt: new Date(), lastLogin: '' });
   }
+  // 舊版把管理者輸入的名稱存在「名稱」欄：還沒登入過的帳號，名稱一定是管理者填的，搬到暱稱欄
+  const moved = readAll_('users').filter(u => u.name && !u.nickname && !u.lastLogin);
+  updateMany_('users', moved.map(u => ({ row: u._row, patch: { nickname: u.name, name: '' } })));
+  if (moved.length) Logger.log('已將 ' + moved.length + ' 筆管理者填寫的名稱移到「暱稱」欄');
   if (ss.getSheetByName('貨態')) Logger.log('提醒：舊版的「貨態」工作表已不再使用，確認不需要後可以刪除。');
   Logger.log('完成！管理者：' + email);
 }
@@ -155,7 +161,7 @@ function authenticate_(idToken) {
 function touchUser_(info) {
   withLock_(() => {
     const u = readAll_('users').find(x => x.email === info.email);
-    if (u) update_('users', u._row, { name: u.name || info.name, lastLogin: new Date() });
+    if (u) update_('users', u._row, { name: info.name, lastLogin: new Date() });
     else append_('users', { email: info.email, name: info.name, role: 'user', createdAt: new Date(), lastLogin: new Date() });
   });
 }
@@ -330,23 +336,23 @@ function listUsers_() {
   const counts = {};
   readAll_('bindings').forEach(b => (counts[b.email] = (counts[b.email] || 0) + 1));
   return readAll_('users').map(u => ({
-    email: u.email, name: u.name, role: u.role || 'user',
+    email: u.email, name: u.name, nickname: u.nickname, role: u.role || 'user',
     createdAt: iso_(u.createdAt), lastLogin: iso_(u.lastLogin), bound: counts[u.email] || 0,
   }));
 }
 
-/** 新增客戶或修改名稱／角色（管理者在下拉選單中看到的名稱以這裡為準） */
+/** 新增客戶，或修改暱稱／角色。Google 名稱由使用者登入時自動帶入，這裡不能改 */
 function saveUser_(p, user) {
   const email = normEmail_(p.email);
   if (!isEmail_(email)) throw apiError_(400, 'Email 格式錯誤：' + (p.email || ''));
   const role = p.role === 'admin' || p.role === 'user' ? p.role : null;
   if (email === user.email && role === 'user') throw apiError_(400, '不能移除自己的管理者權限');
   const patch = {};
-  if ('name' in p) patch.name = str_(p.name);
+  if ('nickname' in p) patch.nickname = str_(p.nickname);
   if (role) patch.role = role;
   const u = readAll_('users').find(x => x.email === email);
   if (u) update_('users', u._row, patch);
-  else append_('users', { email, name: patch.name || '', role: role || 'user', createdAt: new Date(), lastLogin: '' });
+  else append_('users', { email, name: '', nickname: patch.nickname || '', role: role || 'user', createdAt: new Date(), lastLogin: '' });
   return { email };
 }
 

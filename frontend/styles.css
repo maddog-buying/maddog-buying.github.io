@@ -254,7 +254,7 @@ label > input, label > select, label > textarea, label > .input-row { margin-top
     border-radius: var(--radius); margin-bottom: 10px; padding: 10px 14px; box-shadow: var(--shadow);
   }
   .table td { border: 0; padding: 3px 0; display: flex; gap: 12px; align-items: center; }
-  .table td[data-label]::before { content: attr(data-label); flex: 0 0 64px; font-size: .8rem; color: var(--muted); }
+  .table td[data-label]::before { content: attr(data-label); flex: 0 0 84px; font-size: .8rem; color: var(--muted); }
   .table td.chk { position: absolute; top: 10px; right: 12px; width: auto; padding: 0; }
   .table td.ship-id { font-size: 1rem; padding-right: 32px; }
   .note-cell { max-width: none; white-space: normal; }
