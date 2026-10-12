@@ -1,5 +1,5 @@
-// 更新前端檔案後，把版本號 +1，使用者下次開啟就會拿到新版
-const VERSION = 'v3';
+// 更新前端檔案後，把版本號 +1
+const VERSION = 'v4';
 const CACHE = 'shipment-tracker-' + VERSION;
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './config.js', './mock-api.js',
@@ -7,7 +7,10 @@ const ASSETS = [
 ];
 
 self.addEventListener('install', e => {
-  e.waitUntil(caches.open(CACHE).then(c => c.addAll(ASSETS)).then(() => self.skipWaiting()));
+  // cache: 'reload' 略過瀏覽器的 HTTP 快取，確保存到的是最新檔案
+  e.waitUntil(caches.open(CACHE)
+    .then(c => c.addAll(ASSETS.map(u => new Request(u, { cache: 'reload' }))))
+    .then(() => self.skipWaiting()));
 });
 
 self.addEventListener('activate', e => {
@@ -18,16 +21,21 @@ self.addEventListener('activate', e => {
   );
 });
 
-// 本站靜態檔：先回快取（秒開），同時背景更新；API 與 Google 登入不經過快取
+// 本站靜態檔：網路優先（永遠拿最新版），離線或網路太慢時才用快取；API 與 Google 登入不經過這裡
 self.addEventListener('fetch', e => {
   const req = e.request;
   if (req.method !== 'GET' || new URL(req.url).origin !== self.location.origin) return;
-  e.respondWith(caches.open(CACHE).then(async cache => {
-    const cached = await cache.match(req, { ignoreSearch: true });
-    const fresh = fetch(req).then(res => {
+  e.respondWith((async () => {
+    const cache = await caches.open(CACHE);
+    const network = fetch(req, { cache: 'no-cache' }).then(res => {
       if (res.ok) cache.put(req, res.clone());
       return res;
-    }).catch(() => cached);
-    return cached || fresh;
-  }));
+    });
+    const timeout = new Promise(r => setTimeout(r, 4000));
+    try {
+      const res = await Promise.race([network, timeout]);
+      if (res) return res;
+    } catch {}
+    return (await cache.match(req, { ignoreSearch: true })) || network;
+  })());
 });

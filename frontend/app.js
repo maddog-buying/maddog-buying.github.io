@@ -780,7 +780,13 @@ window.addEventListener('online', () => state.user && switchTab(state.tab));
 /* ------------------------------------------------------------------ */
 
 if ('serviceWorker' in navigator && (location.protocol === 'https:' || location.hostname === 'localhost' || location.hostname === '127.0.0.1')) {
-  navigator.serviceWorker.register('sw.js').catch(() => {});
+  // 已有舊版快取的使用者：新版接手後自動重新整理一次
+  const hadController = !!navigator.serviceWorker.controller;
+  let reloaded = false;
+  navigator.serviceWorker.addEventListener('controllerchange', () => {
+    if (hadController && !reloaded) { reloaded = true; location.reload(); }
+  });
+  navigator.serviceWorker.register('sw.js', { updateViaCache: 'none' }).catch(() => {});
 }
 
 document.title = cfg.APP_NAME || document.title;
