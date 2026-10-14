@@ -398,9 +398,9 @@ input::placeholder, textarea::placeholder { color: #6b6b74; }
 /* ================================================================== */
 
 :root {
-  --glass: rgb(255 255 255 / .06);
+  --glass: rgb(255 255 255 / .07);
   --glass-strong: rgb(22 22 26 / .62);
-  --glass-border: rgb(255 255 255 / .13);
+  --glass-border: rgb(255 255 255 / .15);
   --glass-hi: inset 0 1px 0 rgb(255 255 255 / .14);
   --glass-blur: blur(22px) saturate(170%);
   --surface: rgb(255 255 255 / .06);
@@ -408,21 +408,11 @@ input::placeholder, textarea::placeholder { color: #6b6b74; }
   --border: rgb(255 255 255 / .12);
 }
 
-body { background: #060607; background-image: none; isolation: isolate; }
-body::before, body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
-body::before {
-  inset: -12%;
-  background: url(icons/hero.webp) center 30% / cover no-repeat;
-  filter: blur(70px) saturate(1.5) brightness(.42);
-  transform: translateZ(0);
-}
+/* 背景維持純黑；只在頂端留一點紅色微光，讓玻璃面板有層次 */
+body { background: #000; background-image: none; isolation: isolate; }
 body::after {
-  inset: 0;
-  background:
-    radial-gradient(60% 45% at 8% 0%, rgb(225 29 46 / .32), transparent 70%),
-    radial-gradient(55% 45% at 100% 100%, rgb(139 92 246 / .22), transparent 70%),
-    radial-gradient(40% 30% at 90% 15%, rgb(56 189 248 / .10), transparent 70%),
-    linear-gradient(rgb(0 0 0 / .25), rgb(0 0 0 / .55));
+  content: ""; position: fixed; inset: 0; z-index: -1; pointer-events: none;
+  background: radial-gradient(70% 40% at 50% -8%, rgb(225 29 46 / .14), transparent 70%);
 }
 
 /* 共用玻璃面板 */
