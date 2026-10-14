@@ -391,3 +391,110 @@ input::placeholder, textarea::placeholder { color: #6b6b74; }
 .toast { background: #fff; color: #0a0a0b; font-weight: 600; }
 .toast.ok { background: #fff; color: #0a0a0b; border-left: 4px solid var(--ok); }
 .toast.error { background: var(--primary); color: #fff; }
+
+/* ================================================================== */
+/* iOS 毛玻璃風格                                                      */
+/* 背景：模糊的海報＋紅紫光暈；面板：半透明＋背景模糊＋細白亮邊          */
+/* ================================================================== */
+
+:root {
+  --glass: rgb(255 255 255 / .06);
+  --glass-strong: rgb(22 22 26 / .62);
+  --glass-border: rgb(255 255 255 / .13);
+  --glass-hi: inset 0 1px 0 rgb(255 255 255 / .14);
+  --glass-blur: blur(22px) saturate(170%);
+  --surface: rgb(255 255 255 / .06);
+  --surface-2: rgb(255 255 255 / .08);
+  --border: rgb(255 255 255 / .12);
+}
+
+body { background: #060607; background-image: none; isolation: isolate; }
+body::before, body::after { content: ""; position: fixed; z-index: -1; pointer-events: none; }
+body::before {
+  inset: -12%;
+  background: url(icons/hero.webp) center 30% / cover no-repeat;
+  filter: blur(70px) saturate(1.5) brightness(.42);
+  transform: translateZ(0);
+}
+body::after {
+  inset: 0;
+  background:
+    radial-gradient(60% 45% at 8% 0%, rgb(225 29 46 / .32), transparent 70%),
+    radial-gradient(55% 45% at 100% 100%, rgb(139 92 246 / .22), transparent 70%),
+    radial-gradient(40% 30% at 90% 15%, rgb(56 189 248 / .10), transparent 70%),
+    linear-gradient(rgb(0 0 0 / .25), rgb(0 0 0 / .55));
+}
+
+/* 共用玻璃面板 */
+.card, .table, .empty, .tabs, .mini-list, .bulkbar, .chip,
+.login-card, .picker-list, .dialog, .topbar {
+  background: var(--glass);
+  border: 1px solid var(--glass-border);
+  box-shadow: var(--glass-hi), 0 10px 30px rgb(0 0 0 / .35);
+  -webkit-backdrop-filter: var(--glass-blur);
+  backdrop-filter: var(--glass-blur);
+}
+.card { background: linear-gradient(160deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03)); }
+.card::after {
+  content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+  background: linear-gradient(120deg, rgb(255 255 255 / .08), transparent 35%);
+}
+.topbar { background: rgb(12 12 14 / .55); border-width: 0 0 1px; border-bottom-color: rgb(255 255 255 / .1); box-shadow: 0 1px 0 rgb(225 29 46 / .25); }
+.tabs { padding: 4px; }
+.tabs button.active { background: linear-gradient(180deg, rgb(255 60 75 / .95), rgb(205 20 38 / .95)); box-shadow: inset 0 1px 0 rgb(255 255 255 / .3), 0 4px 14px rgb(225 29 46 / .45); }
+
+/* 對話框：較不透明，閱讀表單比較清楚 */
+.dialog { background: var(--glass-strong); border-radius: 22px; box-shadow: var(--glass-hi), 0 30px 80px rgb(0 0 0 / .6); }
+.dialog::backdrop { background: rgb(0 0 0 / .45); -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.picker-list { background: rgb(28 28 32 / .82); }
+
+/* 登入卡片 */
+.login-card { background: rgb(255 255 255 / .05); border-color: rgb(255 255 255 / .14); border-radius: 26px; }
+
+/* 表格 */
+.table { background: rgb(255 255 255 / .04); }
+.table th { background: rgb(255 255 255 / .05); border-bottom-color: rgb(255 255 255 / .1); }
+.table td { border-bottom-color: rgb(255 255 255 / .07); }
+.table tbody tr[data-action]:hover { background: rgb(255 255 255 / .05); }
+
+/* 輸入框與按鈕 */
+input, select, textarea {
+  background: rgb(255 255 255 / .07); border-color: rgb(255 255 255 / .12);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+}
+input[readonly] { background: rgb(255 255 255 / .03); }
+option, optgroup { background: #1b1b1f; color: #f4f4f5; }
+.btn { background: rgb(255 255 255 / .07); border-color: rgb(255 255 255 / .16); box-shadow: var(--glass-hi);
+  -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px); }
+.btn:hover { background: rgb(255 255 255 / .12); border-color: rgb(255 255 255 / .35); }
+.btn.ghost { background: transparent; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+.btn.ghost:hover { background: rgb(255 255 255 / .08); }
+.btn.primary {
+  background: linear-gradient(180deg, rgb(255 60 75 / .95), rgb(205 20 38 / .95));
+  border-color: rgb(255 120 130 / .5);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .35), 0 6px 18px rgb(225 29 46 / .4);
+}
+.btn.primary:hover { background: linear-gradient(180deg, rgb(255 80 95), rgb(225 29 46)); }
+
+/* 其他細節 */
+.badge { -webkit-backdrop-filter: blur(8px); backdrop-filter: blur(8px); }
+.bulkbar { background: rgb(225 29 46 / .16); border-color: rgb(255 90 100 / .35); }
+.toast { -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur); background: rgb(255 255 255 / .88); }
+.toast.error { background: rgb(225 29 46 / .9); }
+.steps span { background: rgb(255 255 255 / .1); }
+
+@media (max-width: 720px) {
+  .table tr {
+    background: linear-gradient(160deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03));
+    border: 1px solid var(--glass-border); box-shadow: var(--glass-hi), 0 10px 30px rgb(0 0 0 / .35);
+    -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+  }
+  .table, .table th { background: transparent; border: 0; box-shadow: none; -webkit-backdrop-filter: none; backdrop-filter: none; }
+}
+
+/* 減少動態效果／效能較差時，關閉模糊改用不透明面板 */
+@media (prefers-reduced-transparency: reduce) {
+  .card, .table, .table tr, .empty, .tabs, .login-card, .dialog, .topbar, .picker-list {
+    -webkit-backdrop-filter: none; backdrop-filter: none; background: #151518;
+  }
+}
