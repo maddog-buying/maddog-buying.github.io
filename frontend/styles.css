@@ -530,3 +530,54 @@ option, optgroup { background: #1b1b1f; color: #f4f4f5; }
   line-height: 1; font-size: 12px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
   font-variant-numeric: tabular-nums; letter-spacing: 0;
 }
+
+/* ================================================================== */
+/* 黑底上的玻璃感：不靠背景模糊，改用「亮邊＋反光＋厚度漸層」表現         */
+/* ================================================================== */
+:root {
+  --glass-fill: linear-gradient(160deg, rgb(255 255 255 / .11) 0%, rgb(255 255 255 / .035) 38%, rgb(255 255 255 / .015) 70%, rgb(255 255 255 / .05) 100%);
+  --glass-edge:
+    inset 0 1px 0 rgb(255 255 255 / .32),      /* 上緣高光 */
+    inset 1px 0 0 rgb(255 255 255 / .10),      /* 左緣 */
+    inset -1px 0 0 rgb(255 255 255 / .05),     /* 右緣 */
+    inset 0 -1px 0 rgb(255 255 255 / .06),     /* 下緣 */
+    inset 0 0 24px rgb(255 255 255 / .025),    /* 玻璃內部微光 */
+    0 12px 32px rgb(0 0 0 / .55);              /* 浮起的陰影 */
+  --glass-border: rgb(255 255 255 / .14);
+}
+
+.card, .empty, .login-card, .done-section > summary, .seg, .tabs {
+  background: var(--glass-fill);
+  border: 1px solid var(--glass-border);
+  border-top-color: rgb(255 255 255 / .24);
+  box-shadow: var(--glass-edge);
+}
+/* 左上角斜向反光 */
+.card::after {
+  background:
+    radial-gradient(90% 60% at 0% 0%, rgb(255 255 255 / .13), transparent 55%),
+    linear-gradient(115deg, transparent 42%, rgb(255 255 255 / .045) 50%, transparent 58%);
+}
+
+/* 表格（桌面）與手機版的卡片列 */
+.table { background: var(--glass-fill); border-top-color: rgb(255 255 255 / .24); box-shadow: var(--glass-edge); }
+@media (max-width: 720px) {
+  .table tr {
+    background: var(--glass-fill);
+    border: 1px solid var(--glass-border); border-top-color: rgb(255 255 255 / .24);
+    box-shadow: var(--glass-edge);
+  }
+  .table tr::after {
+    content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
+    background: radial-gradient(90% 60% at 0% 0%, rgb(255 255 255 / .11), transparent 55%);
+  }
+  .table, .table th { background: transparent; box-shadow: none; }
+}
+
+/* 頂欄、對話框、輸入框也加上上緣高光 */
+.topbar { box-shadow: inset 0 -1px 0 rgb(255 255 255 / .08), 0 1px 0 rgb(225 29 46 / .25); }
+.dialog { background: linear-gradient(160deg, rgb(40 40 46 / .78), rgb(18 18 22 / .82)); border-top-color: rgb(255 255 255 / .26);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / .22), 0 30px 80px rgb(0 0 0 / .7); }
+input, select, textarea { box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), inset 0 1px 6px rgb(0 0 0 / .35); }
+.btn { box-shadow: inset 0 1px 0 rgb(255 255 255 / .18), 0 2px 8px rgb(0 0 0 / .35); }
+.seg button.on { background: linear-gradient(180deg, rgb(255 255 255 / .2), rgb(255 255 255 / .1)); }
