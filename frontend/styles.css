@@ -522,3 +522,11 @@ option, optgroup { background: #1b1b1f; color: #f4f4f5; }
 
 .bulkbar .btn.danger { color: #fff; border-color: rgb(255 255 255 / .35); background: rgb(225 29 46 / .35); }
 .bulkbar .btn.danger:hover { background: rgb(225 29 46 / .6); }
+
+/* 數字徽章：用固定高度＋flex 置中，避免中文字型的行高讓數字看起來偏上或偏下 */
+.count {
+  display: inline-flex; align-items: center; justify-content: center;
+  box-sizing: border-box; height: 20px; min-width: 20px; padding: 1px 6px 0; /* 數字沒有下伸部，補 1px 讓筆畫視覺置中 */
+  line-height: 1; font-size: 12px; font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  font-variant-numeric: tabular-nums; letter-spacing: 0;
+}
