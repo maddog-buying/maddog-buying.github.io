@@ -424,10 +424,10 @@ body::after {
   -webkit-backdrop-filter: var(--glass-blur);
   backdrop-filter: var(--glass-blur);
 }
-.card { background: linear-gradient(160deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03)); }
+.card { background: linear-gradient(160deg, rgb(255 255 255 / .045), rgb(255 255 255 / .01)); }
 .card::after {
   content: ""; position: absolute; inset: 0; border-radius: inherit; pointer-events: none;
-  background: linear-gradient(120deg, rgb(255 255 255 / .08), transparent 35%);
+  background: linear-gradient(120deg, rgb(255 255 255 / .05), transparent 35%);
 }
 .topbar { background: rgb(12 12 14 / .55); border-width: 0 0 1px; border-bottom-color: rgb(255 255 255 / .1); box-shadow: 0 1px 0 rgb(225 29 46 / .25); }
 .tabs { padding: 4px; }
@@ -475,7 +475,7 @@ option, optgroup { background: #1b1b1f; color: #f4f4f5; }
 
 @media (max-width: 720px) {
   .table tr {
-    background: linear-gradient(160deg, rgb(255 255 255 / .09), rgb(255 255 255 / .03));
+    background: linear-gradient(160deg, rgb(255 255 255 / .045), rgb(255 255 255 / .01));
     border: 1px solid var(--glass-border); box-shadow: var(--glass-hi), 0 10px 30px rgb(0 0 0 / .35);
     -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
   }
