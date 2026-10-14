@@ -121,6 +121,8 @@ const ROUTES = {
   saveBatch:      { fn: saveBatch_, admin: true, write: true },
   deleteBatch:    { fn: deleteBatch_, admin: true, write: true },
   bulkBatchStatus:{ fn: bulkBatchStatus_, admin: true, write: true },
+  bulkDeleteBatches:   { fn: bulkDeleteBatches_, admin: true, write: true },
+  bulkDeleteShipments: { fn: bulkDeleteShipments_, admin: true, write: true },
   // 管理者：貨件
   listShipments:  { fn: listShipments_, admin: true },
   saveShipment:   { fn: saveShipment_, admin: true, write: true },
@@ -239,6 +241,20 @@ function bulkBatchStatus_(p, user) {
   return { batches: batches.length, items: updated };
 }
 
+/** 批次刪除物流單，底下的貨件與客人綁定一併刪除（歷程保留） */
+function bulkDeleteBatches_(p, user) {
+  const want = new Set((p.ids || []).map(normId_));
+  if (!want.size) throw apiError_(400, '請選擇物流單');
+  const items = readAll_('items').filter(i => want.has(i.batch));
+  const itemIds = new Set(items.map(i => i.id));
+  const batches = removeWhere_('batches', b => want.has(b.id));
+  removeWhere_('items', i => itemIds.has(i.id));
+  removeWhere_('bindings', b => itemIds.has(b.id));
+  const now = new Date();
+  appendMany_('history', items.map(i => ({ time: now, id: i.id, status: '（已刪除）', note: '隨物流單刪除', by: user.email, batch: i.batch })));
+  return { batches, items: items.length };
+}
+
 function deleteBatch_(p) {
   const id = normId_(p.id);
   const n = readAll_('items').filter(i => i.batch === id).length;
@@ -299,6 +315,17 @@ function batchStatus_(p, user) {
   const status = validStatus_(p.status);
   const items = readAll_('items').filter(s => want.has(s.id));
   return { updated: setItemsStatus_(items, status, str_(p.note), user, new Date(), false, true) };
+}
+
+/** 批次刪除貨件與客人綁定（歷程保留） */
+function bulkDeleteShipments_(p, user) {
+  const want = new Set((p.ids || []).map(normId_));
+  if (!want.size) throw apiError_(400, '請選擇貨件');
+  const deleted = removeWhere_('items', s => want.has(s.id));
+  removeWhere_('bindings', b => want.has(b.id));
+  const now = new Date();
+  appendMany_('history', [...want].map(id => ({ time: now, id, status: '（已刪除）', note: '', by: user.email, batch: '' })));
+  return { deleted };
 }
 
 function deleteShipment_(p, user) {
@@ -478,9 +505,21 @@ function updateMany_(key, changes) {
   range.setValues(vals.map(r => r.map(cell_)));
 }
 
+/** 刪除符合條件的列，回傳刪除筆數。筆數多時改成整批重寫，避免逐列刪除太慢 */
 function removeWhere_(key, pred) {
   const sh = sheet_(key);
-  readAll_(key).filter(pred).map(o => o._row).sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
+  const del = readAll_(key).filter(pred);
+  if (del.length <= 3) {
+    del.map(o => o._row).sort((a, b) => b - a).forEach(r => sh.deleteRow(r));
+    return del.length;
+  }
+  const cols = SHEETS[key].cols.length;
+  const range = sh.getRange(2, 1, sh.getLastRow() - 1, cols);
+  const delRows = new Set(del.map(o => o._row));
+  const keep = range.getValues().filter((_, i) => !delRows.has(i + 2));
+  range.clearContent();
+  if (keep.length) sh.getRange(2, 1, keep.length, cols).setValues(keep.map(r => r.map(cell_)));
+  return del.length;
 }
 
 /* ------------------------------------------------------------------ */

@@ -12,6 +12,8 @@ const state = {
   mine: [], items: [], batches: [], users: [],
   selected: new Set(),        // 勾選的貨件
   selectedBatches: new Set(), // 勾選的物流單
+  itemsView: 'active', batchesView: 'active', // 進行中／已完成
+  mineDoneOpen: false,                        // 客人頁「已完成」區是否展開
   // 搜尋與篩選（對應 data-model）
   mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
   editingItem: null,  // 正在編輯的貨件編號（null = 新增）
@@ -154,7 +156,8 @@ function logout() {
   store.del(CACHE_KEY);
   if (!DEMO && window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
   Object.assign(state, { user: null, mine: [], items: [], batches: [], users: [], loaded: {},
-    mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '' });
+    mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
+    itemsView: 'active', batchesView: 'active', mineDoneOpen: false });
   state.selected.clear();
   state.selectedBatches.clear();
   $$('.tab').forEach(t => (t.innerHTML = ''));
@@ -264,6 +267,17 @@ function relTime(iso) {
 const match = (q, ...fields) => !q || fields.some(f => String(f || '').toLowerCase().includes(q.toLowerCase()));
 const byUpdated = (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '');
 const statusRank = s => { const i = state.statuses.indexOf(s); return i < 0 ? 999 : i; };
+// 流程最後一個狀態（完成）視為已完成，自動移到「已完成」區
+const isDone = s => !!s && s === state.statuses[state.statuses.length - 1];
+const inView = (view, s) => (view === 'done') === isDone(s);
+
+/** 進行中／已完成 切換 */
+function viewSeg(key, list) {
+  const done = list.filter(x => isDone(x.status)).length;
+  const btn = (val, label, n) => `<button type="button" data-action="set-view" data-key="${key}" data-val="${val}"
+      class="${state[key] === val ? 'on' : ''}" aria-pressed="${state[key] === val}">${label}<span class="count">${n}</span></button>`;
+  return `<div class="seg">${btn('active', '進行中', list.length - done)}${btn('done', '已完成', done)}</div>`;
+}
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const userOf = email => state.users.find(u => u.email === email) || {};
 // 管理者畫面優先顯示暱稱，沒設定暱稱時才用對方的 Google 名稱
@@ -271,12 +285,14 @@ const displayName = u => u.nickname || u.name || '';
 const custName = email => displayName(userOf(email));
 const custShort = email => custName(email) || email;
 
-function statusFilter(model, list) {
+function statusFilter(model, list, view = 'active') {
+  if (view === 'done') return ''; // 已完成區只有一種狀態，不需要篩選
+  list = list.filter(x => !isDone(x.status));
   const counts = {};
   list.forEach(x => (counts[x.status] = (counts[x.status] || 0) + 1));
   return `<select data-model="${model}" class="status-filter">
     <option value="">全部狀態（${list.length}）</option>
-    ${state.statuses.map(s => `<option value="${esc(s)}" ${s === state[model] ? 'selected' : ''}>${esc(s)}（${counts[s] || 0}）</option>`).join('')}
+    ${state.statuses.filter(s => !isDone(s)).map(s => `<option value="${esc(s)}" ${s === state[model] ? 'selected' : ''}>${esc(s)}（${counts[s] || 0}）</option>`).join('')}
   </select>`;
 }
 
@@ -312,7 +328,7 @@ function renderMine() {
   } else if (!list.length) {
     body = `<div class="empty"><p>找不到符合「${esc(state.mineQ)}」的貨件</p></div>`;
   } else {
-    body = `<div class="cards">${list.map(s => `
+    const card = s => `
       <article class="card ship-card tone-${s.status ? tone(s.status) : 'muted'}">
         <div class="card-head">
           <h3 class="product">${esc(s.product)} ${qtyTag(s.qty)}</h3>
@@ -322,7 +338,17 @@ function renderMine() {
         ${steps(s.status)}
         ${s.note ? `<p class="ship-note">${esc(s.note)}</p>` : ''}
         ${s.updatedAt ? `<p class="ship-time muted" title="${esc(fmtTime(s.updatedAt))}">更新於 ${esc(relTime(s.updatedAt))}</p>` : ''}
-      </article>`).join('')}</div>`;
+      </article>`;
+    const active = list.filter(s => !isDone(s.status));
+    const done = list.filter(s => isDone(s.status));
+    body = (active.length
+      ? `<div class="cards">${active.map(card).join('')}</div>`
+      : `<div class="empty"><p>目前沒有進行中的貨件</p>${done.length ? '<p class="muted">已完成的貨件在下方</p>' : ''}</div>`)
+      + (done.length ? `
+      <details class="done-section" ${state.mineDoneOpen || !active.length ? 'open' : ''}>
+        <summary>已完成<span class="count">${done.length}</span></summary>
+        <div class="cards">${done.map(card).join('')}</div>
+      </details>` : '');
   }
   keepFocus(el, () => (el.innerHTML = toolbar + body));
 }
@@ -333,7 +359,8 @@ function renderMine() {
 
 function batchRows() {
   return state.batches
-    .filter(b => (!state.batchesStatus || b.status === state.batchesStatus) && match(state.batchesQ, b.id, b.carrier, b.note))
+    .filter(b => inView(state.batchesView, b.status) &&
+      (!state.batchesStatus || b.status === state.batchesStatus) && match(state.batchesQ, b.id, b.carrier, b.note))
     .sort(byUpdated);
 }
 
@@ -345,15 +372,17 @@ function renderBatches() {
   const n = state.selectedBatches.size;
   const allChecked = rows.length && rows.every(r => state.selectedBatches.has(r.id));
   const toolbar = `
+    ${viewSeg('batchesView', state.batches)}
     <div class="toolbar">
       <input type="search" class="search" placeholder="搜尋物流編號、上游、備註" data-model="batchesQ" value="${esc(state.batchesQ)}">
-      ${statusFilter('batchesStatus', state.batches)}
+      ${statusFilter('batchesStatus', state.batches, state.batchesView)}
       <button class="btn" data-action="refresh" title="重新整理">↻</button>
       <button class="btn primary" data-action="new-batch">＋ 新增物流單</button>
     </div>
     <div class="bulkbar" ${n ? '' : 'hidden'}>
       <span>已選取 ${n} 張物流單</span>
       <button class="btn sm primary" data-action="open-bulk-batch">批次更新狀態</button>
+      <button class="btn sm danger" data-action="bulk-delete-batches">批次刪除</button>
       <button class="btn sm ghost" data-action="clear-sel-batch">取消選取</button>
     </div>`;
   const table = rows.length ? `
@@ -374,7 +403,8 @@ function renderBatches() {
         </tr>`).join('')}
       </tbody>
     </table>` : !state.loaded.batches ? LOADING
-      : `<div class="empty"><p>${state.batches.length ? '沒有符合條件的物流單' : '還沒有物流單，點「新增物流單」輸入上游的物流編號'}</p></div>`;
+      : `<div class="empty"><p>${!state.batches.length ? '還沒有物流單，點「新增物流單」輸入上游的物流編號'
+          : state.batchesView === 'done' && !state.batchesQ ? '還沒有已完成的物流單' : '沒有符合條件的物流單'}</p></div>`;
   keepFocus(el, () => (el.innerHTML = toolbar + table));
 }
 
@@ -431,7 +461,7 @@ async function saveBatch() {
 
 function itemRows() {
   return state.items
-    .filter(s => (!state.itemsStatus || s.status === state.itemsStatus) &&
+    .filter(s => inView(state.itemsView, s.status) && (!state.itemsStatus || s.status === state.itemsStatus) &&
       match(state.itemsQ, s.id, s.product, s.batch, s.note, s.emails.join(' '), s.emails.map(custName).join(' ')))
     .sort(byUpdated);
 }
@@ -446,15 +476,17 @@ function renderItems() {
   const allChecked = rows.length && rows.every(r => state.selected.has(r.id));
 
   const toolbar = `
+    ${viewSeg('itemsView', state.items)}
     <div class="toolbar">
       <input type="search" class="search" placeholder="搜尋商品、編號、物流編號、Email" data-model="itemsQ" value="${esc(state.itemsQ)}">
-      ${statusFilter('itemsStatus', state.items)}
+      ${statusFilter('itemsStatus', state.items, state.itemsView)}
       <button class="btn" data-action="refresh" title="重新整理">↻</button>
       <button class="btn primary" data-action="new-item">＋ 新增貨件</button>
     </div>
     <div class="bulkbar" ${n ? '' : 'hidden'}>
       <span>已選取 ${n} 筆</span>
       <button class="btn sm primary" data-action="open-bulk">批次更新狀態</button>
+      <button class="btn sm danger" data-action="bulk-delete-items">批次刪除</button>
       <button class="btn sm ghost" data-action="clear-sel">取消選取</button>
     </div>`;
 
@@ -476,7 +508,8 @@ function renderItems() {
         </tr>`).join('')}
       </tbody>
     </table>` : !state.loaded.items ? LOADING
-      : `<div class="empty"><p>${state.items.length ? '沒有符合條件的貨件' : '還沒有貨件，點「新增貨件」開始'}</p></div>`;
+      : `<div class="empty"><p>${!state.items.length ? '還沒有貨件，點「新增貨件」開始'
+          : state.itemsView === 'done' && !state.itemsQ ? '還沒有已完成的貨件' : '沒有符合條件的貨件'}</p></div>`;
 
   keepFocus(el, () => (el.innerHTML = toolbar + table));
 }
@@ -785,6 +818,37 @@ document.addEventListener('click', async e => {
       if (el.checked) batchRows().forEach(r => state.selectedBatches.add(r.id)); else state.selectedBatches.clear();
       return renderBatches();
     case 'clear-sel-batch': state.selectedBatches.clear(); return renderBatches();
+    case 'set-view': {
+      const key = el.dataset.key;
+      if (state[key] === el.dataset.val) return;
+      state[key] = el.dataset.val;
+      if (key === 'itemsView') { state.itemsStatus = ''; state.selected.clear(); }
+      if (key === 'batchesView') { state.batchesStatus = ''; state.selectedBatches.clear(); }
+      return render();
+    }
+    case 'bulk-delete-batches': {
+      const ids = [...state.selectedBatches];
+      const n = state.items.filter(i => ids.includes(i.batch)).length;
+      if (!confirm(`確定要刪除 ${ids.length} 張物流單？${n ? `\n底下的 ${n} 筆貨件與客人綁定也會一併刪除。` : ''}\n歷程會保留，此動作無法復原。`)) return;
+      try {
+        const r = await api('bulkDeleteBatches', { ids });
+        state.selectedBatches.clear();
+        toast(`已刪除 ${r.batches} 張物流單${r.items ? `、${r.items} 筆貨件` : ''}`, 'ok');
+        await loadAdmin(); render();
+      } catch (err) { fail(err); }
+      return;
+    }
+    case 'bulk-delete-items': {
+      const ids = [...state.selected];
+      if (!confirm(`確定要刪除 ${ids.length} 筆貨件？\n客人的綁定會一併移除，歷程會保留，此動作無法復原。`)) return;
+      try {
+        const r = await api('bulkDeleteShipments', { ids });
+        state.selected.clear();
+        toast(`已刪除 ${r.deleted} 筆貨件`, 'ok');
+        await loadAdmin(); render(); refreshBatchDialog();
+      } catch (err) { fail(err); }
+      return;
+    }
     case 'open-bulk-batch': {
       $('#form-bulk-batch').reset();
       const ids = [...state.selectedBatches];
@@ -918,6 +982,11 @@ onSubmit('#form-bulk', async () => {
     await loadAdmin(); render();
   } catch (e) { fail(e); }
 });
+
+// 記住客人頁「已完成」區的展開狀態（toggle 事件不會冒泡，所以用捕獲）
+document.addEventListener('toggle', e => {
+  if (e.target.classList && e.target.classList.contains('done-section')) state.mineDoneOpen = e.target.open;
+}, true);
 
 // 點對話框外圍關閉
 $$('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));

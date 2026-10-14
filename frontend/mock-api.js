@@ -96,6 +96,26 @@ window.MockApi = (() => {
         ? setItemsStatus(db, db.items.filter(i => i.batch === id), status, '（物流單更新）', u, t, !p.syncAll) : 0;
       return { id, updated };
     },
+    bulkDeleteBatches: (p, u, db) => {
+      const want = new Set((p.ids || []).map(normId));
+      if (!want.size) throw err(400, '請選擇物流單');
+      const items = db.items.filter(i => want.has(i.batch)), ids = new Set(items.map(i => i.id));
+      const before = db.batches.length;
+      db.batches = db.batches.filter(b => !want.has(b.id));
+      db.items = db.items.filter(i => !ids.has(i.id));
+      db.bindings = db.bindings.filter(b => !ids.has(b.id));
+      items.forEach(i => db.history.push({ time: now(), id: i.id, status: '（已刪除）', note: '隨物流單刪除', by: u.email, batch: i.batch }));
+      return { batches: before - db.batches.length, items: items.length };
+    },
+    bulkDeleteShipments: (p, u, db) => {
+      const want = new Set((p.ids || []).map(normId));
+      if (!want.size) throw err(400, '請選擇貨件');
+      const before = db.items.length;
+      db.items = db.items.filter(s => !want.has(s.id));
+      db.bindings = db.bindings.filter(b => !want.has(b.id));
+      want.forEach(id => db.history.push({ time: now(), id, status: '（已刪除）', note: '', by: u.email, batch: '' }));
+      return { deleted: before - db.items.length };
+    },
     bulkBatchStatus: (p, u, db) => {
       const want = new Set((p.ids || []).map(normId));
       if (!want.size) throw err(400, '請選擇物流單');

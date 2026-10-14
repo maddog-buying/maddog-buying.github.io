@@ -488,3 +488,37 @@ option, optgroup { background: #1b1b1f; color: #f4f4f5; }
     -webkit-backdrop-filter: none; backdrop-filter: none; background: #151518;
   }
 }
+
+/* 進行中／已完成 切換（iOS 分段控制） */
+.seg {
+  display: inline-flex; gap: 2px; padding: 3px; margin-bottom: 12px; border-radius: 12px;
+  background: rgb(255 255 255 / .06); border: 1px solid var(--glass-border); box-shadow: var(--glass-hi);
+  -webkit-backdrop-filter: var(--glass-blur); backdrop-filter: var(--glass-blur);
+}
+.seg button {
+  border: 0; background: transparent; color: var(--muted); font: inherit; font-weight: 700;
+  padding: 7px 16px; border-radius: 9px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+}
+.seg button:hover { color: var(--text); }
+.seg button.on { background: rgb(255 255 255 / .14); color: #fff; box-shadow: inset 0 1px 0 rgb(255 255 255 / .2), 0 2px 8px rgb(0 0 0 / .4); }
+.count {
+  display: inline-block; min-width: 1.6em; padding: 0 6px; border-radius: 999px; text-align: center;
+  font-size: .75rem; font-weight: 700; line-height: 1.6; background: rgb(255 255 255 / .1); color: var(--muted);
+}
+.seg button.on .count { background: var(--primary); color: #fff; }
+
+/* 客人頁：已完成區 */
+.done-section { margin-top: 20px; }
+.done-section > summary {
+  list-style: none; cursor: pointer; display: flex; align-items: center; gap: 8px;
+  padding: 12px 16px; margin-bottom: 12px; border-radius: 14px; font-weight: 700; color: var(--muted);
+  background: rgb(255 255 255 / .04); border: 1px solid var(--glass-border); box-shadow: var(--glass-hi);
+}
+.done-section > summary::-webkit-details-marker { display: none; }
+.done-section > summary::after { content: "›"; margin-left: auto; font-size: 1.3rem; line-height: 1; transition: transform .2s; }
+.done-section[open] > summary::after { transform: rotate(90deg); }
+.done-section > summary:hover { color: var(--text); }
+.done-section .ship-card { opacity: .75; }
+
+.bulkbar .btn.danger { color: #fff; border-color: rgb(255 255 255 / .35); background: rgb(225 29 46 / .35); }
+.bulkbar .btn.danger:hover { background: rgb(225 29 46 / .6); }
