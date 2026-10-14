@@ -4,5 +4,5 @@ window.APP_CONFIG = {
   API_URL: 'https://script.google.com/macros/s/AKfycbxAkYnK0nANTTnBQsYbSmcrs4pot1ICUhShES4A9-sJnZ0Zxkqr1f2I-W2fcsyLe5H9pg/exec',
   // Google Cloud Console 的 OAuth 用戶端 ID（需與 backend/Code.gs 相同）
   GOOGLE_CLIENT_ID: '673711843673-78ota4tlqcsa0ghgp1gk2r2pi8t74pd3.apps.googleusercontent.com',
-  APP_NAME: '貨態查詢',
+  APP_NAME: '瘋狗貨態',
 };

@@ -1,4 +1,4 @@
-# 貨態查詢 PWA
+# 瘋狗貨態 PWA（MAD DOG CLUB）
 
 管理者維護貨態，使用者用 Google 帳號登入後，查詢自己綁定的貨態。
 資料存在 Google 試算表，後端用 Google Apps Script（免費）。

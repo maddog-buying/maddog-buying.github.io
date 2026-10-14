@@ -1,9 +1,10 @@
 // 更新前端檔案後，把版本號 +1
-const VERSION = 'v8';
+const VERSION = 'v9';
 const CACHE = 'shipment-tracker-' + VERSION;
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './config.js', './mock-api.js',
   './manifest.webmanifest', './icons/icon-192.png', './icons/icon-512.png', './icons/apple-touch-icon.png',
+  './icons/logo-96.webp', './icons/hero.webp', './icons/favicon-64.png',
 ];
 
 self.addEventListener('install', e => {

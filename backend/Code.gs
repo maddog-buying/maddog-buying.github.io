@@ -120,6 +120,7 @@ const ROUTES = {
   listBatches:    { fn: listBatches_, admin: true },
   saveBatch:      { fn: saveBatch_, admin: true, write: true },
   deleteBatch:    { fn: deleteBatch_, admin: true, write: true },
+  bulkBatchStatus:{ fn: bulkBatchStatus_, admin: true, write: true },
   // 管理者：貨件
   listShipments:  { fn: listShipments_, admin: true },
   saveShipment:   { fn: saveShipment_, admin: true, write: true },
@@ -224,6 +225,18 @@ function saveBatch_(p, user) {
     ? setItemsStatus_(readAll_('items').filter(i => i.batch === id), status, '（物流單更新）', user, now, !p.syncAll)
     : 0;
   return { id, updated };
+}
+
+/** 多張物流單一次改狀態，並帶動底下的貨件（規則同 saveBatch_） */
+function bulkBatchStatus_(p, user) {
+  const want = new Set((p.ids || []).map(normId_));
+  if (!want.size) throw apiError_(400, '請選擇物流單');
+  const status = validStatus_(p.status), now = new Date();
+  const batches = readAll_('batches').filter(b => want.has(b.id));
+  updateMany_('batches', batches.map(b => ({ row: b._row, patch: { status, updatedAt: now, updatedBy: user.email } })));
+  const items = readAll_('items').filter(i => want.has(i.batch));
+  const updated = setItemsStatus_(items, status, '（物流單批次更新）', user, now, !p.syncAll);
+  return { batches: batches.length, items: updated };
 }
 
 function deleteBatch_(p) {

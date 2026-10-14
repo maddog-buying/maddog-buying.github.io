@@ -3,14 +3,18 @@
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
-  <title>貨態查詢</title>
-  <meta name="description" content="查詢與管理貨物狀態">
-  <meta name="theme-color" content="#2563eb">
+  <title>瘋狗貨態</title>
+  <meta name="description" content="MAD DOG CLUB 瘋狗俱樂部 — 查詢您的貨件狀態">
+  <meta name="theme-color" content="#0a0a0b">
   <link rel="manifest" href="manifest.webmanifest">
-  <link rel="icon" href="icons/icon-192.png" type="image/png">
+  <link rel="icon" href="icons/favicon-64.png" type="image/png">
   <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
   <meta name="apple-mobile-web-app-capable" content="yes">
-  <meta name="apple-mobile-web-app-title" content="貨態查詢">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black">
+  <meta name="apple-mobile-web-app-title" content="瘋狗貨態">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+TC:wght@400;600;800;900&family=Permanent+Marker&display=swap">
   <link rel="stylesheet" href="styles.css">
 </head>
 <body>
@@ -19,9 +23,10 @@
   <!-- 登入 -->
   <section id="view-login" class="view login" hidden>
     <div class="login-card">
-      <img src="icons/icon-192.png" alt="" class="login-logo">
-      <h1>貨態查詢</h1>
-      <p class="muted">請使用 Google 帳號登入，查詢您綁定的貨件狀態。</p>
+      <img src="icons/hero.webp" alt="MAD DOG 瘋狗俱樂部" class="login-hero" width="720" height="720">
+      <h1>瘋狗<em>貨態</em></h1>
+      <p class="login-tag">MAD DOG CLUB</p>
+      <p class="muted">請使用 Google 帳號登入，查詢您的貨件狀態。</p>
       <p id="login-msg" class="login-msg" role="alert"></p>
       <div id="login-actions" class="login-actions"></div>
       <p class="login-foot"><a href="privacy.html">隱私權政策</a></p>
@@ -31,7 +36,7 @@
   <!-- 主畫面 -->
   <section id="view-app" class="view" hidden>
     <header class="topbar">
-      <div class="brand"><img src="icons/icon-192.png" alt=""><span>貨態查詢</span></div>
+      <div class="brand"><img src="icons/logo-96.webp" alt="" width="36" height="36"><span class="brand-text">瘋狗<em>貨態</em></span></div>
       <nav id="tabs" class="tabs" hidden>
         <button data-tab="batches">物流單</button>
         <button data-tab="items">貨件</button>
@@ -121,6 +126,21 @@
         <button type="button" class="btn ghost" data-close>關閉</button>
         <button class="btn" value="next" id="btn-save-next">儲存並新增下一筆</button>
         <button class="btn primary" value="ok">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 管理者：批次更新物流單 -->
+  <dialog id="dlg-bulk-batch" class="dialog">
+    <form method="dialog" id="form-bulk-batch">
+      <h2>批次更新物流單</h2>
+      <p class="muted" id="bulk-batch-count"></p>
+      <label>狀態<select name="status" required></select></label>
+      <label class="check"><input type="checkbox" name="syncAll">
+        <span>強制把所有貨件設為此狀態<small class="muted">　預設只推進進度落後的貨件</small></span></label>
+      <div class="dlg-actions">
+        <button type="button" class="btn ghost" data-close>取消</button>
+        <button class="btn primary" value="ok">更新</button>
       </div>
     </form>
   </dialog>

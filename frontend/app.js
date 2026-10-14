@@ -10,7 +10,8 @@ const esc = s => String(s ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': 
 const state = {
   user: null, statuses: [], tab: null,
   mine: [], items: [], batches: [], users: [],
-  selected: new Set(),
+  selected: new Set(),        // 勾選的貨件
+  selectedBatches: new Set(), // 勾選的物流單
   // 搜尋與篩選（對應 data-model）
   mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
   editingItem: null,  // 正在編輯的貨件編號（null = 新增）
@@ -143,7 +144,7 @@ function showLogin(msg = '') {
       auto_select: true,
       cancel_on_tap_outside: false,
     });
-    google.accounts.id.renderButton(box, { theme: 'filled_blue', size: 'large', shape: 'pill', text: 'signin_with', locale: 'zh-TW', width: 280 });
+    google.accounts.id.renderButton(box, { theme: 'filled_black', size: 'large', shape: 'pill', text: 'signin_with', locale: 'zh-TW', width: 280 });
     google.accounts.id.prompt();
   }).catch(e => (box.textContent = e.message));
 }
@@ -155,6 +156,7 @@ function logout() {
   Object.assign(state, { user: null, mine: [], items: [], batches: [], users: [], loaded: {},
     mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '' });
   state.selected.clear();
+  state.selectedBatches.clear();
   $$('.tab').forEach(t => (t.innerHTML = ''));
   showLogin();
 }
@@ -261,6 +263,7 @@ function relTime(iso) {
 }
 const match = (q, ...fields) => !q || fields.some(f => String(f || '').toLowerCase().includes(q.toLowerCase()));
 const byUpdated = (a, b) => (b.updatedAt || '').localeCompare(a.updatedAt || '');
+const statusRank = s => { const i = state.statuses.indexOf(s); return i < 0 ? 999 : i; };
 const isEmail = e => /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(e);
 const userOf = email => state.users.find(u => u.email === email) || {};
 // 管理者畫面優先顯示暱稱，沒設定暱稱時才用對方的 Google 名稱
@@ -294,7 +297,8 @@ function steps(status) {
 
 function renderMine() {
   const el = $('#tab-mine');
-  const list = state.mine.filter(s => match(state.mineQ, s.id, s.product, s.status, s.note)).sort(byUpdated);
+  const list = state.mine.filter(s => match(state.mineQ, s.id, s.product, s.status, s.note))
+    .sort((a, b) => statusRank(a.status) - statusRank(b.status) || a.id.localeCompare(b.id));
   const toolbar = `
     <div class="toolbar">
       <input type="search" class="search" placeholder="搜尋商品、編號或狀態" data-model="mineQ" value="${esc(state.mineQ)}">
@@ -327,23 +331,40 @@ function renderMine() {
 /* 物流單（管理者）                                                     */
 /* ------------------------------------------------------------------ */
 
-function renderBatches() {
-  const el = $('#tab-batches');
-  const rows = state.batches
+function batchRows() {
+  return state.batches
     .filter(b => (!state.batchesStatus || b.status === state.batchesStatus) && match(state.batchesQ, b.id, b.carrier, b.note))
     .sort(byUpdated);
+}
+
+function renderBatches() {
+  const el = $('#tab-batches');
+  const rows = batchRows();
+  const visible = new Set(rows.map(r => r.id));
+  [...state.selectedBatches].forEach(id => visible.has(id) || state.selectedBatches.delete(id));
+  const n = state.selectedBatches.size;
+  const allChecked = rows.length && rows.every(r => state.selectedBatches.has(r.id));
   const toolbar = `
     <div class="toolbar">
       <input type="search" class="search" placeholder="搜尋物流編號、上游、備註" data-model="batchesQ" value="${esc(state.batchesQ)}">
       ${statusFilter('batchesStatus', state.batches)}
       <button class="btn" data-action="refresh" title="重新整理">↻</button>
       <button class="btn primary" data-action="new-batch">＋ 新增物流單</button>
+    </div>
+    <div class="bulkbar" ${n ? '' : 'hidden'}>
+      <span>已選取 ${n} 張物流單</span>
+      <button class="btn sm primary" data-action="open-bulk-batch">批次更新狀態</button>
+      <button class="btn sm ghost" data-action="clear-sel-batch">取消選取</button>
     </div>`;
   const table = rows.length ? `
     <table class="table">
-      <thead><tr><th>物流編號</th><th>上游</th><th>狀態</th><th>貨件</th><th>內部備註</th><th>最後更新</th></tr></thead>
+      <thead><tr>
+        <th class="chk"><input type="checkbox" data-action="check-all-batch" ${allChecked ? 'checked' : ''} aria-label="全選"></th>
+        <th>物流編號</th><th>上游</th><th>狀態</th><th>貨件</th><th>內部備註</th><th>最後更新</th>
+      </tr></thead>
       <tbody>${rows.map(b => `
-        <tr data-action="edit-batch" data-id="${esc(b.id)}">
+        <tr data-action="edit-batch" data-id="${esc(b.id)}" class="${state.selectedBatches.has(b.id) ? 'sel' : ''}">
+          <td class="chk"><input type="checkbox" data-action="check-batch" data-id="${esc(b.id)}" ${state.selectedBatches.has(b.id) ? 'checked' : ''} aria-label="選取 ${esc(b.id)}"></td>
           <td class="ship-id" data-label="物流編號">${esc(b.id)}</td>
           <td data-label="上游">${esc(b.carrier) || '<span class="muted">—</span>'}</td>
           <td data-label="狀態">${badge(b.status)}</td>
@@ -754,7 +775,23 @@ document.addEventListener('click', async e => {
 
     // 物流單
     case 'new-batch': return openBatch(null);
-    case 'edit-batch': return openBatch(id);
+    case 'edit-batch':
+      if (e.target.closest('.chk')) return;
+      return openBatch(id);
+    case 'check-batch':
+      el.checked ? state.selectedBatches.add(id) : state.selectedBatches.delete(id);
+      return renderBatches();
+    case 'check-all-batch':
+      if (el.checked) batchRows().forEach(r => state.selectedBatches.add(r.id)); else state.selectedBatches.clear();
+      return renderBatches();
+    case 'clear-sel-batch': state.selectedBatches.clear(); return renderBatches();
+    case 'open-bulk-batch': {
+      $('#form-bulk-batch').reset();
+      const ids = [...state.selectedBatches];
+      const items = state.items.filter(i => ids.includes(i.batch)).length;
+      $('#bulk-batch-count').textContent = `將更新 ${ids.length} 張物流單（共 ${items} 筆貨件）`;
+      return $('#dlg-bulk-batch').showModal();
+    }
     case 'add-item-to-batch': {
       const b = state.batches.find(x => x.id === state.editingBatch);
       return openItem(null, { batch: state.editingBatch, status: b && b.status });
@@ -859,6 +896,17 @@ function onSubmit(form, handler) {
 
 onSubmit('#form-batch', saveBatch);
 onSubmit('#form-item', btn => saveItem(btn.value === 'next'));
+
+onSubmit('#form-bulk-batch', async () => {
+  const f = $('#form-bulk-batch');
+  try {
+    const r = await api('bulkBatchStatus', { ids: [...state.selectedBatches], status: f.status.value, syncAll: f.syncAll.checked });
+    $('#dlg-bulk-batch').close();
+    state.selectedBatches.clear();
+    toast(`已更新 ${r.batches} 張物流單，同步 ${r.items} 筆貨件`, 'ok');
+    await loadAdmin(); render();
+  } catch (e) { fail(e); }
+});
 
 onSubmit('#form-bulk', async () => {
   const f = $('#form-bulk');

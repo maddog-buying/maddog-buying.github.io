@@ -96,6 +96,15 @@ window.MockApi = (() => {
         ? setItemsStatus(db, db.items.filter(i => i.batch === id), status, '（物流單更新）', u, t, !p.syncAll) : 0;
       return { id, updated };
     },
+    bulkBatchStatus: (p, u, db) => {
+      const want = new Set((p.ids || []).map(normId));
+      if (!want.size) throw err(400, '請選擇物流單');
+      const status = valid(p.status), t = now();
+      const batches = db.batches.filter(b => want.has(b.id));
+      batches.forEach(b => Object.assign(b, { status, updatedAt: t, updatedBy: u.email }));
+      const items = setItemsStatus(db, db.items.filter(i => want.has(i.batch)), status, '（物流單批次更新）', u, t, !p.syncAll);
+      return { batches: batches.length, items };
+    },
     deleteBatch: (p, u, db) => {
       const id = normId(p.id), n = db.items.filter(i => i.batch === id).length;
       if (n) throw err(409, `此物流單還有 ${n} 筆貨件，請先移到其他物流單或刪除`);
