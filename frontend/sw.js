@@ -1,5 +1,5 @@
 // 更新前端檔案後，把版本號 +1
-const VERSION = 'v15';
+const VERSION = 'v16';
 const CACHE = 'shipment-tracker-' + VERSION;
 const ASSETS = [
   './', './index.html', './styles.css', './app.js', './config.js', './mock-api.js',

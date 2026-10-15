@@ -1,7 +1,7 @@
 // 示範模式用的假後端：與 backend/Code.gs 的 API 行為一致，資料存在 localStorage。
 window.MockApi = (() => {
-  const KEY = 'st_demo_db_v4';
-  const STATUSES = ['倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
+  const KEY = 'st_demo_db_v5';
+  const STATUSES = ['準備中', '倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
   const ADMIN = 'admin@demo.local', USER = 'user@demo.local';
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
   const day = (h = 0) => {

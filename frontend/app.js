@@ -87,6 +87,10 @@ async function api(action, payload = {}) {
   }
   if (!res.ok) {
     if (res.code === 401) { Auth.clear(); showLogin(res.error); }
+    // 前端已更新、但 Apps Script 還是舊版時，給管理者明確的處理方式
+    if (res.code === 400 && /^未知的操作/.test(res.error || '')) {
+      throw new ApiError(400, '後端版本過舊：請到 Apps Script 貼上最新的 Code.gs，並「部署 → 管理部署作業 → 新版本」');
+    }
     throw new ApiError(res.code, res.error);
   }
   return res.data;
@@ -247,7 +251,7 @@ function render() {
 /* 格式                                                                */
 /* ------------------------------------------------------------------ */
 
-const TONES = { '清關中': 'warn', '抵達瘋狗窩': 'accent', '瘋狗窩已寄出': 'accent', '完成': 'ok' };
+const TONES = { '準備中': 'muted', '清關中': 'warn', '抵達瘋狗窩': 'accent', '瘋狗窩已寄出': 'accent', '完成': 'ok' };
 const tone = s => TONES[s] || (state.statuses.includes(s) ? 'info' : 'muted');
 const badge = s => s ? `<span class="badge ${tone(s)}">${esc(s)}</span>` : `<span class="badge muted">查無資料</span>`;
 const LOADING = '<div class="empty muted"><p>載入中…</p></div>';
