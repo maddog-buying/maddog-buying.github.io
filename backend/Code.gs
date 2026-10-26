@@ -17,6 +17,9 @@ const CONFIG = {
   ID_PREFIX: 'MD',
   TIMEZONE: 'Asia/Taipei',
   // 狀態依流程先後排列
+  // 商品 DM 的販售狀態
+  DM_STATUSES: ['現貨', '預購', '售罄'],
+  DM_FOLDER_NAME: '瘋狗貨態 DM 圖片',
   STATUSES: ['準備中', '倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'],
 };
 
@@ -46,6 +49,12 @@ const SHEETS = {
     // name = 使用者自己的 Google 名稱（登入時更新）；nickname = 管理者設定的暱稱（使用者看不到）
     cols: [['email', 'Email'], ['name', 'Google 名稱'], ['role', '角色'], ['createdAt', '建立時間'], ['lastLogin', '最後登入'],
            ['nickname', '暱稱（管理者用）']],
+  },
+  dm: {
+    name: 'DM',
+    // deadline 以 yyyy-MM-dd 文字儲存，避免時區造成日期跑掉；imageFileId 是雲端硬碟上的圖片檔
+    cols: [['id', 'DM 編號'], ['name', '商品名稱'], ['price', '售價'], ['status', '狀態'], ['deadline', '期限'],
+           ['imageUrl', '圖片網址'], ['imageFileId', '圖片檔 ID'], ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間']],
   },
 };
 
@@ -83,6 +92,7 @@ function setup() {
   updateMany_('users', moved.map(u => ({ row: u._row, patch: { nickname: u.name, name: '' } })));
   if (moved.length) Logger.log('已將 ' + moved.length + ' 筆管理者填寫的名稱移到「暱稱」欄');
   if (ss.getSheetByName('貨態')) Logger.log('提醒：舊版的「貨態」工作表已不再使用，確認不需要後可以刪除。');
+  dmFolder_(); // 先建立 DM 圖片資料夾（第一次會要求雲端硬碟授權）
   Logger.log('完成！管理者：' + email);
 }
 
@@ -133,6 +143,10 @@ const ROUTES = {
   unbind:         { fn: unbind_, admin: true, write: true },
   // 管理者：使用者
   listUsers:      { fn: listUsers_, admin: true },
+  // 商品 DM：所有登入者可看，管理者可編輯
+  listDM:         { fn: listDM_ },
+  saveDM:         { fn: saveDM_, admin: true, write: true },
+  deleteDM:       { fn: deleteDM_, admin: true, write: true },
   setRole:        { fn: setRole_, admin: true, write: true },
   saveUser:       { fn: saveUser_, admin: true, write: true },
   deleteUser:     { fn: deleteUser_, admin: true, write: true },
@@ -355,6 +369,94 @@ function unbind_(p) {
   const email = normEmail_(p.email);
   removeWhere_('bindings', b => b.id === id && b.email === email);
   return true;
+}
+
+/* ------------------------------------------------------------------ */
+/* 商品 DM                                                             */
+/* ------------------------------------------------------------------ */
+
+function listDM_() {
+  return readAll_('dm').map(d => ({
+    id: d.id, name: d.name, price: d.price === '' ? null : Number(d.price), status: d.status,
+    deadline: d.deadline instanceof Date ? Utilities.formatDate(d.deadline, CONFIG.TIMEZONE, 'yyyy-MM-dd') : d.deadline,
+    imageUrl: d.imageUrl, imageFileId: d.imageFileId, updatedAt: iso_(d.updatedAt), createdAt: iso_(d.createdAt),
+  }));
+}
+
+function saveDM_(p, user) {
+  const name = str_(p.name);
+  if (!name) throw apiError_(400, '請輸入商品名稱');
+  const status = str_(p.status);
+  if (CONFIG.DM_STATUSES.indexOf(status) < 0) throw apiError_(400, '無效的商品狀態：' + status);
+  const priceStr = str_(p.price);
+  const price = priceStr === '' ? '' : Number(priceStr);
+  if (price !== '' && (!isFinite(price) || price < 0)) throw apiError_(400, '售價格式錯誤');
+  const deadline = str_(p.deadline);
+  if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) throw apiError_(400, '期限格式錯誤');
+  let imageUrl = str_(p.imageUrl);
+  if (imageUrl && !/^https:\/\//i.test(imageUrl)) throw apiError_(400, '圖片網址必須是 https:// 開頭');
+
+  const now = new Date();
+  const rows = readAll_('dm');
+  const ex = p.mode === 'create' ? null : rows.find(d => d.id === normId_(p.id));
+  if (p.mode !== 'create' && !ex) throw apiError_(404, '找不到這筆 DM');
+
+  let imageFileId = ex ? ex.imageFileId : '';
+  if (p.image && p.image.data) {
+    const saved = saveImage_(p.image, name);
+    trashFile_(imageFileId); // 換圖時把舊圖丟到雲端硬碟的垃圾桶（30 天內可還原）
+    imageFileId = saved.fileId;
+    imageUrl = saved.url;
+  } else if (ex && imageUrl !== ex.imageUrl && ex.imageFileId) {
+    trashFile_(ex.imageFileId); // 改用外部網址或移除圖片
+    imageFileId = '';
+  }
+
+  const rec = { name, price, status, deadline, imageUrl, imageFileId, updatedAt: now, updatedBy: user.email };
+  if (ex) {
+    update_('dm', ex._row, rec);
+    return { id: ex.id };
+  }
+  const id = 'DM' + Utilities.formatDate(now, CONFIG.TIMEZONE, 'yyMMddHHmmss');
+  append_('dm', Object.assign({ id, createdAt: now }, rec));
+  return { id };
+}
+
+function deleteDM_(p) {
+  const want = new Set((p.ids || [p.id]).map(normId_));
+  const rows = readAll_('dm').filter(d => want.has(d.id));
+  rows.forEach(d => trashFile_(d.imageFileId));
+  removeWhere_('dm', d => want.has(d.id));
+  return { deleted: rows.length };
+}
+
+/** 存放 DM 圖片的雲端硬碟資料夾（資料夾 ID 記在指令碼屬性中） */
+function dmFolder_() {
+  const props = PropertiesService.getScriptProperties();
+  const id = props.getProperty('DM_FOLDER_ID');
+  if (id) {
+    try { return DriveApp.getFolderById(id); } catch (e) { /* 資料夾被刪了就重建 */ }
+  }
+  const folder = DriveApp.createFolder(CONFIG.DM_FOLDER_NAME);
+  props.setProperty('DM_FOLDER_ID', folder.getId());
+  return folder;
+}
+
+function saveImage_(img, name) {
+  const mime = str_(img.mime);
+  if (!/^image\/(jpeg|png|webp|gif)$/.test(mime)) throw apiError_(400, '只接受 JPG、PNG、WebP、GIF 圖片');
+  const bytes = Utilities.base64Decode(img.data);
+  if (bytes.length > 4 * 1024 * 1024) throw apiError_(400, '圖片太大（上限 4MB）');
+  const ext = mime.split('/')[1].replace('jpeg', 'jpg');
+  const file = dmFolder_().createFile(Utilities.newBlob(bytes, mime, name + '.' + ext));
+  // 網頁要能直接顯示圖片，所以設為「知道連結的人可檢視」
+  file.setSharing(DriveApp.Access.ANYONE_WITH_LINK, DriveApp.Permission.VIEW);
+  return { fileId: file.getId(), url: 'https://drive.google.com/thumbnail?id=' + file.getId() + '&sz=w1200' };
+}
+
+function trashFile_(id) {
+  if (!id) return;
+  try { DriveApp.getFileById(id).setTrashed(true); } catch (e) { /* 檔案已不存在 */ }
 }
 
 /* ------------------------------------------------------------------ */

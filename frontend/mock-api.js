@@ -1,6 +1,7 @@
 // 示範模式用的假後端：與 backend/Code.gs 的 API 行為一致，資料存在 localStorage。
 window.MockApi = (() => {
-  const KEY = 'st_demo_db_v5';
+  const KEY = 'st_demo_db_v6';
+  const DM_STATUSES = ['現貨', '預購', '售罄'];
   const STATUSES = ['準備中', '倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
   const ADMIN = 'admin@demo.local', USER = 'user@demo.local';
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
@@ -34,6 +35,23 @@ window.MockApi = (() => {
     item('SF1460023389', 'PSA 評級卡套組', 2, '抵達瘋狗窩', 20, ['amy@demo.local']);
     item('JD0098812734', '卡磚收納盒（大）', 5, '倉庫出倉', 2, [USER]);
     item('', '寶可夢 中文版 特典卡', 1, '完成', 60, [USER]);
+    // 示範用 DM：圖片用簡單的 SVG 色塊代替
+    const svg = (bg, fg, text) => 'data:image/svg+xml;charset=utf-8,' + encodeURIComponent(
+      `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 400"><defs><linearGradient id="g" x1="0" y1="0" x2="1" y2="1">` +
+      `<stop offset="0" stop-color="${bg}"/><stop offset="1" stop-color="#0a0a0b"/></linearGradient></defs>` +
+      `<rect width="400" height="400" fill="url(#g)"/><text x="200" y="215" font-size="44" font-weight="900" fill="${fg}" ` +
+      `text-anchor="middle" font-family="sans-serif">${text}</text></svg>`);
+    const dayStr = d => { const t = new Date(Date.now() + d * 86400e3); return t.toLocaleDateString('en-CA'); };
+    const dm = (name, price, status, deadline, imageUrl) =>
+      ({ id: 'DM' + Math.random().toString(36).slice(2, 8).toUpperCase(), name, price, status, deadline, imageUrl, imageFileId: '',
+         updatedAt: ago(5), updatedBy: ADMIN, createdAt: ago(50) });
+    db.dm = [
+      dm('寶可夢 151 中文版 補充包（盒）', 1680, '預購', dayStr(5), svg('#e11d2e', '#fff', 'POKÉMON 151')),
+      dm('航海王卡牌 OP-10 原盒', 2350, '現貨', dayStr(20), svg('#f59e0b', '#111', 'ONE PIECE')),
+      dm('MAD DOG 限定卡磚', 450, '現貨', '', 'icons/hero.webp'),
+      dm('遊戲王 25 週年 典藏盒', 3980, '售罄', dayStr(12), svg('#7c3aed', '#fff', 'YU-GI-OH!')),
+      dm('PSA 送鑑代購團 10 月梯', 600, '預購', dayStr(-3), svg('#0ea5e9', '#fff', 'PSA')),
+    ];
     return db;
   }
 
@@ -78,6 +96,34 @@ window.MockApi = (() => {
       .map(id => db.items.find(x => x.id === id)).filter(Boolean)
       .map(s => ({ id: s.id, product: s.product, qty: s.qty, status: s.status, note: s.note, updatedAt: s.updatedAt })),
 
+    listDM: (p, u, db) => (db.dm || []).map(d => ({ ...d })),
+    saveDM: (p, u, db) => {
+      db.dm = db.dm || [];
+      const name = str(p.name); if (!name) throw err(400, '請輸入商品名稱');
+      const status = str(p.status); if (!DM_STATUSES.includes(status)) throw err(400, '無效的商品狀態：' + status);
+      const ps = str(p.price), price = ps === '' ? null : Number(ps);
+      if (price !== null && (!isFinite(price) || price < 0)) throw err(400, '售價格式錯誤');
+      const deadline = str(p.deadline);
+      if (deadline && !/^\d{4}-\d{2}-\d{2}$/.test(deadline)) throw err(400, '期限格式錯誤');
+      let imageUrl = str(p.imageUrl);
+      if (p.image && p.image.data) imageUrl = `data:${p.image.mime};base64,${p.image.data}`;
+      else if (imageUrl && !/^(https:\/\/|data:image\/|icons\/)/i.test(imageUrl)) throw err(400, '圖片網址必須是 https:// 開頭');
+      const rec = { name, price, status, deadline, imageUrl, imageFileId: '', updatedAt: now(), updatedBy: u.email };
+      if (p.mode === 'create') {
+        const id = 'DM' + Date.now().toString(36).toUpperCase();
+        db.dm.push({ id, createdAt: now(), ...rec });
+        return { id };
+      }
+      const ex = db.dm.find(d => d.id === normId(p.id));
+      if (!ex) throw err(404, '找不到這筆 DM');
+      Object.assign(ex, rec);
+      return { id: ex.id };
+    },
+    deleteDM: (p, u, db) => {
+      const want = new Set((p.ids || [p.id]).map(normId)), before = (db.dm || []).length;
+      db.dm = (db.dm || []).filter(d => !want.has(d.id));
+      return { deleted: before - db.dm.length };
+    },
     listBatches: (p, u, db) => db.batches.map(b => ({ ...b, itemCount: db.items.filter(i => i.batch === b.id).length })),
     saveBatch: (p, u, db) => {
       const id = normId(p.id); if (!id) throw err(400, '請輸入物流編號');
@@ -210,7 +256,7 @@ window.MockApi = (() => {
       return true;
     },
   };
-  const PUBLIC = ['me', 'myShipments'];
+  const PUBLIC = ['me', 'myShipments', 'listDM'];
 
   async function handle({ action, payload, idToken }) {
     await new Promise(r => setTimeout(r, 200 + Math.random() * 250));

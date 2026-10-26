@@ -14,6 +14,8 @@ const state = {
   selectedBatches: new Set(), // 勾選的物流單
   itemsView: 'active', batchesView: 'active', // 進行中／已完成
   mineDoneOpen: false,                        // 客人頁「已完成」區是否展開
+  dm: [], dmQ: '', dmStatus: '',
+  editingDM: null, dmImage: null,             // dmImage：待上傳的圖片 { data, mime, preview }
   // 搜尋與篩選（對應 data-model）
   mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
   editingItem: null,  // 正在編輯的貨件編號（null = 新增）
@@ -161,7 +163,7 @@ function logout() {
   if (!DEMO && window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
   Object.assign(state, { user: null, mine: [], items: [], batches: [], users: [], loaded: {},
     mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
-    itemsView: 'active', batchesView: 'active', mineDoneOpen: false });
+    itemsView: 'active', batchesView: 'active', mineDoneOpen: false, dm: [], dmQ: '', dmStatus: '' });
   state.selected.clear();
   state.selectedBatches.clear();
   $$('.tab').forEach(t => (t.innerHTML = ''));
@@ -206,7 +208,11 @@ function renderShell() {
   $('#me-email').title = u.email;
   $('#me-role').textContent = u.role === 'admin' ? '管理者' : '使用者';
   $('#me-role').className = 'badge ' + (u.role === 'admin' ? 'info' : 'muted');
-  $('#tabs').hidden = u.role !== 'admin';
+  const tabs = u.role === 'admin'
+    ? [['batches', '物流單'], ['items', '貨件'], ['dm', 'DM'], ['users', '使用者'], ['mine', '我的']]
+    : [['mine', '我的貨態'], ['dm', '商品 DM']];
+  $('#tabs').innerHTML = tabs.map(([k, label]) => `<button data-tab="${k}">${label}</button>`).join('');
+  $('#tabs').hidden = false;
   $$('select[name=status]').forEach(sel => {
     sel.innerHTML = state.statuses.map(s => `<option>${esc(s)}</option>`).join('');
   });
@@ -222,6 +228,7 @@ async function switchTab(tab, load = true) {
     if (tab === 'mine') await loadMine();
     if (tab === 'items' || tab === 'batches') await loadAdmin();
     if (tab === 'users') state.users = await api('listUsers');
+    if (tab === 'dm') state.dm = await api('listDM');
     state.loaded[tab] = true;
     $('#offline-banner').hidden = true;
   } catch (e) { fail(e); }
@@ -245,6 +252,7 @@ function render() {
   if (state.tab === 'batches') renderBatches();
   if (state.tab === 'items') renderItems();
   if (state.tab === 'users') renderUsers();
+  if (state.tab === 'dm') renderDM();
 }
 
 /* ------------------------------------------------------------------ */
@@ -705,6 +713,190 @@ function refreshBatchDialog() {
 }
 
 /* ------------------------------------------------------------------ */
+/* 商品 DM                                                             */
+/* ------------------------------------------------------------------ */
+
+const DM_TONES = { '現貨': 'ok', '預購': 'accent', '售罄': 'muted' };
+const todayStr = () => new Date().toLocaleDateString('en-CA'); // 本機日期 yyyy-mm-dd
+// 期限當天仍有效，隔天起才算逾期
+const isExpired = d => !!d.deadline && d.deadline < todayStr();
+const fmtPrice = p => p == null || p === '' ? '' : 'NT$ ' + Number(p).toLocaleString('zh-TW');
+const safeImg = u => /^(https:\/\/|data:image\/|icons\/)/i.test(u || '') ? u : '';
+
+function deadlineText(d) {
+  if (!d.deadline) return '';
+  const days = Math.round((Date.parse(d.deadline) - Date.parse(todayStr())) / 86400e3);
+  const md = d.deadline.slice(5).replace('-', '/');
+  if (days < 0) return `已截止（${md}）`;
+  if (days === 0) return `今天截止（${md}）`;
+  return `${md} 截止・剩 ${days} 天`;
+}
+
+function dmRows() {
+  return state.dm
+    .filter(d => (!state.dmStatus || d.status === state.dmStatus) && match(state.dmQ, d.name, d.status))
+    .sort((a, b) => isExpired(a) - isExpired(b)
+      // 未截止：期限近的在前、沒期限的在後；已截止：最近截止的在前
+      || (isExpired(a) ? (b.deadline || '').localeCompare(a.deadline || '')
+        : (a.deadline || '9999').localeCompare(b.deadline || '9999'))
+      || (b.updatedAt || '').localeCompare(a.updatedAt || ''));
+}
+
+function renderDM() {
+  const el = $('#tab-dm');
+  const admin = state.user.role === 'admin';
+  const rows = dmRows();
+  const counts = {};
+  state.dm.forEach(d => (counts[d.status] = (counts[d.status] || 0) + 1));
+  const toolbar = `
+    <div class="toolbar">
+      <input type="search" class="search" placeholder="搜尋商品" data-model="dmQ" value="${esc(state.dmQ)}">
+      <select data-model="dmStatus" class="status-filter">
+        <option value="">全部（${state.dm.length}）</option>
+        ${Object.keys(DM_TONES).map(s => `<option value="${s}" ${s === state.dmStatus ? 'selected' : ''}>${s}（${counts[s] || 0}）</option>`).join('')}
+      </select>
+      <button class="btn" data-action="refresh" title="重新整理">↻</button>
+      ${admin ? '<button class="btn primary" data-action="new-dm">＋ 新增 DM</button>' : ''}
+    </div>`;
+  const body = !state.loaded.dm ? LOADING
+    : !rows.length ? `<div class="empty"><p>${state.dm.length ? '沒有符合條件的商品' : admin ? '還沒有 DM，點「新增 DM」上架第一個商品' : '目前沒有商品 DM'}</p></div>`
+    : `<div class="dm-grid">${rows.map(d => {
+        const img = safeImg(d.imageUrl);
+        const expired = isExpired(d);
+        return `
+        <article class="card dm-card ${expired ? 'expired' : ''} ${d.status === '售罄' ? 'soldout' : ''}" data-action="${admin ? 'edit-dm' : 'view-dm'}" data-id="${esc(d.id)}" tabindex="0">
+          <div class="dm-img">
+            ${img ? `<img src="${esc(img)}" alt="${esc(d.name)}" loading="lazy" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : '<span class="dm-noimg">MAD DOG</span>'}
+            <span class="badge ${DM_TONES[d.status] || 'muted'} dm-status">${esc(d.status)}</span>
+            ${expired ? '<span class="dm-ribbon">已截止</span>' : ''}
+          </div>
+          <div class="dm-body">
+            <h3 class="dm-name">${esc(d.name)}</h3>
+            <div class="dm-meta">
+              <span class="dm-price">${esc(fmtPrice(d.price))}</span>
+              ${d.deadline ? `<span class="dm-deadline ${!expired && Date.parse(d.deadline) - Date.parse(todayStr()) <= 3 * 86400e3 ? 'soon' : ''}">${esc(deadlineText(d))}</span>` : ''}
+            </div>
+          </div>
+        </article>`;
+      }).join('')}</div>`;
+  keepFocus(el, () => (el.innerHTML = toolbar + body));
+}
+
+// 雲端硬碟縮圖網址偶爾失效時，改用另一種網址再試一次
+document.addEventListener('error', e => {
+  const img = e.target;
+  if (img.tagName !== 'IMG' || !img.dataset.file || img.dataset.retried) return;
+  img.dataset.retried = '1';
+  img.src = `https://lh3.googleusercontent.com/d/${img.dataset.file}=w1200`;
+}, true);
+
+function openDMView(id) {
+  const d = state.dm.find(x => x.id === id);
+  if (!d) return;
+  const img = safeImg(d.imageUrl);
+  $('#dm-view-body').innerHTML = `
+    ${img ? `<img class="dm-view-img ${isExpired(d) ? 'expired' : ''}" src="${esc(img)}" alt="${esc(d.name)}" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : ''}
+    <h2>${esc(d.name)}</h2>
+    <div class="dm-meta">
+      <span class="badge ${DM_TONES[d.status] || 'muted'}">${esc(d.status)}</span>
+      <span class="dm-price">${esc(fmtPrice(d.price))}</span>
+    </div>
+    ${d.deadline ? `<p class="muted">${esc(deadlineText(d))}</p>` : ''}`;
+  $('#dlg-dm-view').showModal();
+}
+
+function setDMPreview(src) {
+  $('#dm-preview').innerHTML = src
+    ? `<img src="${esc(src)}" alt="預覽" referrerpolicy="no-referrer">`
+    : '<span class="muted">尚未選擇圖片</span>';
+}
+
+function openDM(id) {
+  const d = id ? state.dm.find(x => x.id === id) : null;
+  const f = $('#form-dm');
+  state.editingDM = d ? d.id : null;
+  state.dmImage = null;
+  f.reset();
+  $('#dm-title').textContent = d ? '編輯 DM' : '新增 DM';
+  f.name.value = d ? d.name : '';
+  f.price.value = d && d.price != null ? d.price : '';
+  f.dmStatus.value = d ? d.status : '現貨';
+  f.deadline.value = d ? d.deadline || '' : '';
+  f.imageUrl.value = d ? d.imageUrl || '' : '';
+  // 雲端硬碟上傳的圖片不顯示網址，避免誤改
+  f.imageUrl.hidden = !!(d && d.imageFileId);
+  setDMPreview(d ? safeImg(d.imageUrl) : '');
+  $('#btn-delete-dm').hidden = !d;
+  $('#dlg-dm').showModal();
+  if (!d) f.name.focus();
+}
+
+/** 把選擇的圖片縮小到最長邊 1200px 並轉成 JPEG，加快上傳 */
+function compressImage(file, max = 1200, quality = 0.85) {
+  return new Promise((ok, no) => {
+    const url = URL.createObjectURL(file);
+    const img = new Image();
+    img.onload = () => {
+      const scale = Math.min(1, max / Math.max(img.width, img.height));
+      const c = document.createElement('canvas');
+      c.width = Math.round(img.width * scale);
+      c.height = Math.round(img.height * scale);
+      const ctx = c.getContext('2d');
+      ctx.fillStyle = '#000'; // 透明背景補黑色
+      ctx.fillRect(0, 0, c.width, c.height);
+      ctx.drawImage(img, 0, 0, c.width, c.height);
+      URL.revokeObjectURL(url);
+      const dataUrl = c.toDataURL('image/jpeg', quality);
+      ok({ data: dataUrl.split(',')[1], mime: 'image/jpeg', preview: dataUrl });
+    };
+    img.onerror = () => { URL.revokeObjectURL(url); no(new Error('無法讀取這張圖片')); };
+    img.src = url;
+  });
+}
+
+$('#dm-file').addEventListener('change', async e => {
+  const file = e.target.files[0];
+  e.target.value = '';
+  if (!file) return;
+  try {
+    state.dmImage = await compressImage(file);
+    setDMPreview(state.dmImage.preview);
+    const f = $('#form-dm');
+    f.imageUrl.value = '';
+    f.imageUrl.hidden = true;
+  } catch (err) { fail(err); }
+});
+
+$('#form-dm').imageUrl.addEventListener('input', e => {
+  state.dmImage = null;
+  setDMPreview(safeImg(e.target.value.trim()));
+});
+
+async function saveDM(btn) {
+  const f = $('#form-dm');
+  const isNew = !state.editingDM;
+  const label = btn.textContent;
+  if (state.dmImage) btn.textContent = '上傳中…';
+  try {
+    const d = state.dm.find(x => x.id === state.editingDM);
+    let imageUrl = f.imageUrl.value.trim();
+    // 網址欄被隱藏、又沒選新圖 → 沿用原本雲端硬碟上的圖片
+    if (f.imageUrl.hidden && !state.dmImage && d && d.imageFileId) imageUrl = d.imageUrl;
+    const payload = {
+      mode: isNew ? 'create' : 'update', id: state.editingDM, name: f.name.value, price: f.price.value,
+      status: f.dmStatus.value, deadline: f.deadline.value, imageUrl,
+    };
+    if (state.dmImage) payload.image = { data: state.dmImage.data, mime: state.dmImage.mime };
+    await api('saveDM', payload);
+    state.dm = await api('listDM');
+    renderDM();
+    toast(isNew ? '已新增 DM' : '已更新 DM', 'ok');
+    $('#dlg-dm').close();
+  } catch (e) { fail(e); }
+  finally { btn.textContent = label; }
+}
+
+/* ------------------------------------------------------------------ */
 /* 使用者管理                                                          */
 /* ------------------------------------------------------------------ */
 
@@ -927,6 +1119,29 @@ document.addEventListener('click', async e => {
       } catch (err) { fail(err); }
       return;
 
+    // 商品 DM
+    case 'new-dm': return openDM(null);
+    case 'edit-dm': return openDM(id);
+    case 'view-dm': return openDMView(id);
+    case 'dm-clear-image': {
+      state.dmImage = null;
+      const f = $('#form-dm');
+      f.imageUrl.value = '';
+      f.imageUrl.hidden = false;
+      return setDMPreview('');
+    }
+    case 'delete-dm': {
+      const d = state.dm.find(x => x.id === state.editingDM);
+      if (!d || !confirm(`確定要刪除「${d.name}」？${d.imageFileId ? '\n圖片會移到雲端硬碟的垃圾桶。' : ''}`)) return;
+      try {
+        await api('deleteDM', { id: d.id });
+        $('#dlg-dm').close();
+        toast('已刪除 DM', 'ok');
+        state.dm = await api('listDM'); renderDM();
+      } catch (err) { fail(err); }
+      return;
+    }
+
     // 使用者管理
     case 'delete-user': {
       const u = userOf(el.dataset.email);
@@ -963,6 +1178,7 @@ function onSubmit(form, handler) {
 }
 
 onSubmit('#form-batch', saveBatch);
+onSubmit('#form-dm', saveDM);
 onSubmit('#form-item', btn => saveItem(btn.value === 'next'));
 
 onSubmit('#form-bulk-batch', async () => {

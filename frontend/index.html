@@ -37,12 +37,7 @@
   <section id="view-app" class="view" hidden>
     <header class="topbar">
       <div class="brand"><img src="icons/logo-96.webp" alt="" width="36" height="36"><span class="brand-text">瘋狗<em>貨態</em></span></div>
-      <nav id="tabs" class="tabs" hidden>
-        <button data-tab="batches">物流單</button>
-        <button data-tab="items">貨件</button>
-        <button data-tab="users">使用者</button>
-        <button data-tab="mine">我的</button>
-      </nav>
+      <nav id="tabs" class="tabs" hidden></nav>
       <div class="me">
         <span id="me-email" class="me-email"></span>
         <span id="me-role" class="badge"></span>
@@ -55,6 +50,7 @@
       <div id="tab-batches" class="tab" hidden></div>
       <div id="tab-items" class="tab" hidden></div>
       <div id="tab-users" class="tab" hidden></div>
+      <div id="tab-dm" class="tab" hidden></div>
     </main>
   </section>
 
@@ -128,6 +124,46 @@
         <button class="btn primary" value="ok">儲存</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- 管理者：商品 DM -->
+  <dialog id="dlg-dm" class="dialog wide">
+    <form method="dialog" id="form-dm">
+      <h2 id="dm-title">新增 DM</h2>
+      <div class="dm-editor">
+        <div class="dm-image-field">
+          <div id="dm-preview" class="dm-preview"><span class="muted">尚未選擇圖片</span></div>
+          <div class="dm-image-actions">
+            <label class="btn sm file-btn">選擇圖片<input type="file" id="dm-file" accept="image/*" hidden></label>
+            <button type="button" class="btn sm ghost" data-action="dm-clear-image">移除圖片</button>
+          </div>
+          <input name="imageUrl" type="url" placeholder="或貼上圖片網址（https://…）" autocomplete="off">
+        </div>
+        <div>
+          <label>商品名稱<input name="name" required autocomplete="off"></label>
+          <div class="grid2">
+            <label>售價（NT$）<input name="price" type="number" min="0" step="1" inputmode="numeric" placeholder="留空則不顯示"></label>
+            <label>狀態<select name="dmStatus" required>
+              <option>現貨</option><option>預購</option><option>售罄</option>
+            </select></label>
+          </div>
+          <label>期限<input name="deadline" type="date"></label>
+          <p class="hint">期限當天仍可購買，隔天起自動變灰並排到最後；留空表示沒有期限。</p>
+        </div>
+      </div>
+      <div class="dlg-actions">
+        <button type="button" class="btn danger ghost" data-action="delete-dm" id="btn-delete-dm">刪除</button>
+        <span class="spacer"></span>
+        <button type="button" class="btn ghost" data-close>關閉</button>
+        <button class="btn primary" value="ok" id="btn-save-dm">儲存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <!-- 客人：DM 大圖 -->
+  <dialog id="dlg-dm-view" class="dialog dm-view">
+    <div id="dm-view-body"></div>
+    <div class="dlg-actions"><button type="button" class="btn" data-close>關閉</button></div>
   </dialog>
 
   <!-- 管理者：批次更新物流單 -->
