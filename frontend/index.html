@@ -144,10 +144,12 @@
           <label>商品名稱<input name="name" required autocomplete="off"></label>
           <div class="grid2">
             <label>售價（NT$）<input name="price" type="number" min="0" step="1" inputmode="numeric" placeholder="留空則不顯示"></label>
-            <label>狀態<select name="dmStatus" required>
-              <option>現貨</option><option>預購</option><option>售罄</option>
+            <label>類型<select name="dmStatus" required>
+              <option>現貨</option><option>預購</option>
             </select></label>
           </div>
+          <label class="check soldout-check"><input type="checkbox" name="soldOut">
+            <span>已售罄<small class="muted">　仍顯示在原本的分區，價格加上刪除線</small></span></label>
           <label>期限<input name="deadline" type="date"></label>
           <p class="hint">期限當天仍可購買，隔天起自動變灰並排到最後；留空表示沒有期限。</p>
         </div>

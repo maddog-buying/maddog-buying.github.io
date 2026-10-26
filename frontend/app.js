@@ -716,7 +716,10 @@ function refreshBatchDialog() {
 /* 商品 DM                                                             */
 /* ------------------------------------------------------------------ */
 
-const DM_TONES = { '現貨': 'ok', '預購': 'accent', '售罄': 'muted' };
+const DM_TONES = { '現貨': 'ok', '預購': 'accent' };
+// 標籤文字與顏色：售罄的顯示成「預購・已售罄」並改為灰色
+const dmLabel = d => d.soldOut ? `${d.status}・已售罄` : d.status;
+const dmTone = d => d.soldOut ? 'muted' : DM_TONES[d.status] || 'muted';
 const todayStr = () => new Date().toLocaleDateString('en-CA'); // 本機日期 yyyy-mm-dd
 // 期限當天仍有效，隔天起才算逾期
 const isExpired = d => !!d.deadline && d.deadline < todayStr();
@@ -732,12 +735,13 @@ function deadlineText(d) {
   return `${md} 截止・剩 ${days} 天`;
 }
 
-const DM_VIEWS = ['現貨', '預購', '售罄'];
+const DM_VIEWS = ['現貨', '預購'];
 
 function dmRows() {
   return state.dm
     .filter(d => d.status === state.dmView && match(state.dmQ, d.name))
-    .sort((a, b) => isExpired(a) - isExpired(b)
+    // 順序：可購買 → 已售罄 → 已截止
+    .sort((a, b) => isExpired(a) - isExpired(b) || !!a.soldOut - !!b.soldOut
       // 未截止：期限近的在前、沒期限的在後；已截止：最近截止的在前
       || (isExpired(a) ? (b.deadline || '').localeCompare(a.deadline || '')
         : (a.deadline || '9999').localeCompare(b.deadline || '9999'))
@@ -765,10 +769,10 @@ function renderDM() {
         const img = safeImg(d.imageUrl);
         const expired = isExpired(d);
         return `
-        <article class="card dm-card ${expired ? 'expired' : ''} ${d.status === '售罄' ? 'soldout' : ''}" data-action="${admin ? 'edit-dm' : 'view-dm'}" data-id="${esc(d.id)}" tabindex="0">
+        <article class="card dm-card ${expired ? 'expired' : ''} ${d.soldOut ? 'soldout' : ''}" data-action="${admin ? 'edit-dm' : 'view-dm'}" data-id="${esc(d.id)}" tabindex="0">
           <div class="dm-img">
             ${img ? `<img src="${esc(img)}" alt="${esc(d.name)}" loading="lazy" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : '<span class="dm-noimg">MAD DOG</span>'}
-            <span class="badge ${DM_TONES[d.status] || 'muted'} dm-status">${esc(d.status)}</span>
+            <span class="badge ${dmTone(d)} dm-status">${esc(dmLabel(d))}</span>
             ${expired ? '<span class="dm-ribbon">已截止</span>' : ''}
           </div>
           <div class="dm-body">
@@ -799,7 +803,7 @@ function openDMView(id) {
     ${img ? `<img class="dm-view-img ${isExpired(d) ? 'expired' : ''}" src="${esc(img)}" alt="${esc(d.name)}" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : ''}
     <h2>${esc(d.name)}</h2>
     <div class="dm-meta">
-      <span class="badge ${DM_TONES[d.status] || 'muted'}">${esc(d.status)}</span>
+      <span class="badge ${dmTone(d)}">${esc(dmLabel(d))}</span>
       <span class="dm-price">${esc(fmtPrice(d.price))}</span>
     </div>
     ${d.deadline ? `<p class="muted">${esc(deadlineText(d))}</p>` : ''}`;
@@ -822,6 +826,7 @@ function openDM(id) {
   f.name.value = d ? d.name : '';
   f.price.value = d && d.price != null ? d.price : '';
   f.dmStatus.value = d ? d.status : state.dmView; // 新增時預設為目前所在的分區
+  f.soldOut.checked = !!(d && d.soldOut);
   f.deadline.value = d ? d.deadline || '' : '';
   f.imageUrl.value = d ? d.imageUrl || '' : '';
   // 雲端硬碟上傳的圖片不顯示網址，避免誤改
@@ -972,7 +977,7 @@ async function saveDM(btn) {
     if (f.imageUrl.hidden && !state.dmImage && d && d.imageFileId) imageUrl = d.imageUrl;
     const payload = {
       mode: isNew ? 'create' : 'update', id: state.editingDM, name: f.name.value, price: f.price.value,
-      status: f.dmStatus.value, deadline: f.deadline.value, imageUrl,
+      status: f.dmStatus.value, soldOut: f.soldOut.checked, deadline: f.deadline.value, imageUrl,
     };
     if (state.dmImage) payload.image = { data: state.dmImage.data, mime: state.dmImage.mime };
     await api('saveDM', payload);

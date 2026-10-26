@@ -672,3 +672,6 @@ input, select, textarea { box-shadow: inset 0 1px 0 rgb(255 255 255 / .06), inse
 }
 .crop-zoom { display: flex; align-items: center; gap: 10px; margin-top: 14px; color: var(--muted); font-weight: 700; }
 .crop-zoom input[type=range] { flex: 1; min-height: 0; padding: 0; accent-color: var(--primary); background: transparent; box-shadow: none; border: 0; }
+/* 已售罄：圖片稍微壓暗，與「已截止」的全灰區分 */
+.dm-card.soldout:not(.expired) .dm-img img { filter: brightness(.6) saturate(.6); }
+.soldout-check { margin-top: -2px; }

@@ -1,7 +1,7 @@
 // 示範模式用的假後端：與 backend/Code.gs 的 API 行為一致，資料存在 localStorage。
 window.MockApi = (() => {
-  const KEY = 'st_demo_db_v6';
-  const DM_STATUSES = ['現貨', '預購', '售罄'];
+  const KEY = 'st_demo_db_v7';
+  const DM_STATUSES = ['現貨', '預購'];
   const STATUSES = ['準備中', '倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'];
   const ADMIN = 'admin@demo.local', USER = 'user@demo.local';
   const ago = h => new Date(Date.now() - h * 3600e3).toISOString();
@@ -42,14 +42,15 @@ window.MockApi = (() => {
       `<rect width="400" height="400" fill="url(#g)"/><text x="200" y="215" font-size="44" font-weight="900" fill="${fg}" ` +
       `text-anchor="middle" font-family="sans-serif">${text}</text></svg>`);
     const dayStr = d => { const t = new Date(Date.now() + d * 86400e3); return t.toLocaleDateString('en-CA'); };
-    const dm = (name, price, status, deadline, imageUrl) =>
-      ({ id: 'DM' + Math.random().toString(36).slice(2, 8).toUpperCase(), name, price, status, deadline, imageUrl, imageFileId: '',
+    const dm = (name, price, status, deadline, imageUrl, soldOut = false) =>
+      ({ id: 'DM' + Math.random().toString(36).slice(2, 8).toUpperCase(), name, price, status, soldOut, deadline, imageUrl, imageFileId: '',
          updatedAt: ago(5), updatedBy: ADMIN, createdAt: ago(50) });
     db.dm = [
       dm('寶可夢 151 中文版 補充包（盒）', 1680, '預購', dayStr(5), svg('#e11d2e', '#fff', 'POKÉMON 151')),
       dm('航海王卡牌 OP-10 原盒', 2350, '現貨', dayStr(20), svg('#f59e0b', '#111', 'ONE PIECE')),
       dm('MAD DOG 限定卡磚', 450, '現貨', '', 'icons/hero.webp'),
-      dm('遊戲王 25 週年 典藏盒', 3980, '售罄', dayStr(12), svg('#7c3aed', '#fff', 'YU-GI-OH!')),
+      dm('遊戲王 25 週年 典藏盒', 3980, '現貨', dayStr(12), svg('#7c3aed', '#fff', 'YU-GI-OH!'), true),
+      dm('寶可夢 朱紫 特典禮盒', 2280, '預購', dayStr(9), svg('#16a34a', '#fff', 'SCARLET'), true),
       dm('PSA 送鑑代購團 10 月梯', 600, '預購', dayStr(-3), svg('#0ea5e9', '#fff', 'PSA')),
     ];
     return db;
@@ -100,7 +101,8 @@ window.MockApi = (() => {
     saveDM: (p, u, db) => {
       db.dm = db.dm || [];
       const name = str(p.name); if (!name) throw err(400, '請輸入商品名稱');
-      const status = str(p.status); if (!DM_STATUSES.includes(status)) throw err(400, '無效的商品狀態：' + status);
+      const status = str(p.status); if (!DM_STATUSES.includes(status)) throw err(400, '無效的商品類型：' + status);
+      const soldOut = p.soldOut === true || p.soldOut === 'true';
       const ps = str(p.price), price = ps === '' ? null : Number(ps);
       if (price !== null && (!isFinite(price) || price < 0)) throw err(400, '售價格式錯誤');
       const deadline = str(p.deadline);
@@ -108,7 +110,7 @@ window.MockApi = (() => {
       let imageUrl = str(p.imageUrl);
       if (p.image && p.image.data) imageUrl = `data:${p.image.mime};base64,${p.image.data}`;
       else if (imageUrl && !/^(https:\/\/|data:image\/|icons\/)/i.test(imageUrl)) throw err(400, '圖片網址必須是 https:// 開頭');
-      const rec = { name, price, status, deadline, imageUrl, imageFileId: '', updatedAt: now(), updatedBy: u.email };
+      const rec = { name, price, status, soldOut, deadline, imageUrl, imageFileId: '', updatedAt: now(), updatedBy: u.email };
       if (p.mode === 'create') {
         const id = 'DM' + Date.now().toString(36).toUpperCase();
         db.dm.push({ id, createdAt: now(), ...rec });

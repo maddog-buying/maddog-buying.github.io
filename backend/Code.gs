@@ -17,8 +17,8 @@ const CONFIG = {
   ID_PREFIX: 'MD',
   TIMEZONE: 'Asia/Taipei',
   // 狀態依流程先後排列
-  // 商品 DM 的販售狀態
-  DM_STATUSES: ['現貨', '預購', '售罄'],
+  // 商品 DM 的類型（決定顯示在哪一區）；是否售罄另外記在 soldOut 欄位
+  DM_STATUSES: ['現貨', '預購'],
   DM_FOLDER_NAME: '瘋狗貨態 DM 圖片',
   STATUSES: ['準備中', '倉庫出倉', '抵達中國港口', '船班發船', '抵達台灣港口', '清關中', '抵達瘋狗窩', '瘋狗窩已寄出', '完成'],
 };
@@ -54,7 +54,8 @@ const SHEETS = {
     name: 'DM',
     // deadline 以 yyyy-MM-dd 文字儲存，避免時區造成日期跑掉；imageFileId 是雲端硬碟上的圖片檔
     cols: [['id', 'DM 編號'], ['name', '商品名稱'], ['price', '售價'], ['status', '狀態'], ['deadline', '期限'],
-           ['imageUrl', '圖片網址'], ['imageFileId', '圖片檔 ID'], ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間']],
+           ['imageUrl', '圖片網址'], ['imageFileId', '圖片檔 ID'], ['updatedAt', '最後更新'], ['updatedBy', '更新者'], ['createdAt', '建立時間'],
+           ['soldOut', '已售罄']],
   },
 };
 
@@ -93,6 +94,10 @@ function setup() {
   if (moved.length) Logger.log('已將 ' + moved.length + ' 筆管理者填寫的名稱移到「暱稱」欄');
   if (ss.getSheetByName('貨態')) Logger.log('提醒：舊版的「貨態」工作表已不再使用，確認不需要後可以刪除。');
   dmFolder_(); // 先建立 DM 圖片資料夾（第一次會要求雲端硬碟授權）
+  // 舊版把「售罄」當成狀態：改成「現貨＋已售罄」（原本是預購的話，請在網頁上改類型）
+  const legacy = readAll_('dm').filter(d => d.status === '售罄');
+  updateMany_('dm', legacy.map(d => ({ row: d._row, patch: { status: '現貨', soldOut: true } })));
+  if (legacy.length) Logger.log('已將 ' + legacy.length + ' 筆「售罄」DM 改為「現貨・已售罄」，原本是預購的請到網頁修改類型');
   Logger.log('完成！管理者：' + email);
 }
 
@@ -375,9 +380,13 @@ function unbind_(p) {
 /* 商品 DM                                                             */
 /* ------------------------------------------------------------------ */
 
+function isTrue_(v) { return v === true || /^(true|y|yes|1|是)$/i.test(String(v).trim()); }
+
 function listDM_() {
   return readAll_('dm').map(d => ({
-    id: d.id, name: d.name, price: d.price === '' ? null : Number(d.price), status: d.status,
+    id: d.id, name: d.name, price: d.price === '' ? null : Number(d.price),
+    // 尚未執行 setup 移轉的舊資料，讀取時也先當成「現貨・已售罄」
+    status: d.status === '售罄' ? '現貨' : d.status, soldOut: d.status === '售罄' || isTrue_(d.soldOut),
     deadline: d.deadline instanceof Date ? Utilities.formatDate(d.deadline, CONFIG.TIMEZONE, 'yyyy-MM-dd') : d.deadline,
     imageUrl: d.imageUrl, imageFileId: d.imageFileId, updatedAt: iso_(d.updatedAt), createdAt: iso_(d.createdAt),
   }));
@@ -387,7 +396,8 @@ function saveDM_(p, user) {
   const name = str_(p.name);
   if (!name) throw apiError_(400, '請輸入商品名稱');
   const status = str_(p.status);
-  if (CONFIG.DM_STATUSES.indexOf(status) < 0) throw apiError_(400, '無效的商品狀態：' + status);
+  if (CONFIG.DM_STATUSES.indexOf(status) < 0) throw apiError_(400, '無效的商品類型：' + status);
+  const soldOut = isTrue_(p.soldOut);
   const priceStr = str_(p.price);
   const price = priceStr === '' ? '' : Number(priceStr);
   if (price !== '' && (!isFinite(price) || price < 0)) throw apiError_(400, '售價格式錯誤');
@@ -412,7 +422,7 @@ function saveDM_(p, user) {
     imageFileId = '';
   }
 
-  const rec = { name, price, status, deadline, imageUrl, imageFileId, updatedAt: now, updatedBy: user.email };
+  const rec = { name, price, status, soldOut, deadline, imageUrl, imageFileId, updatedAt: now, updatedBy: user.email };
   if (ex) {
     update_('dm', ex._row, rec);
     return { id: ex.id };
