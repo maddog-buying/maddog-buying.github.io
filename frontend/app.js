@@ -726,6 +726,19 @@ const isExpired = d => !!d.deadline && d.deadline < todayStr();
 const fmtPrice = p => p == null || p === '' ? '' : 'NT$ ' + Number(p).toLocaleString('zh-TW');
 const safeImg = u => /^(https:\/\/|data:image\/|icons\/)/i.test(u || '') ? u : '';
 
+/**
+ * DM 圖片的 <img>。雲端硬碟上的圖片優先用 lh3.googleusercontent.com 網址：
+ * drive.google.com/thumbnail 需要轉址與 Google Cookie，iOS Safari 擋跨站追蹤時常載入失敗（顯示藍色問號）。
+ * 若 lh3 也失敗，再退回原本存的網址（見下方 error 事件）。
+ */
+function dmImgTag(d, attrs = '') {
+  const url = safeImg(d.imageUrl);
+  if (!url) return '';
+  const src = d.imageFileId ? `https://lh3.googleusercontent.com/d/${encodeURIComponent(d.imageFileId)}=w1200` : url;
+  const fallback = d.imageFileId && src !== url ? url : '';
+  return `<img src="${esc(src)}" ${fallback ? `data-fallback="${esc(fallback)}"` : ''} referrerpolicy="no-referrer" ${attrs}>`;
+}
+
 function deadlineText(d) {
   if (!d.deadline) return '';
   const days = Math.round((Date.parse(d.deadline) - Date.parse(todayStr())) / 86400e3);
@@ -771,7 +784,7 @@ function renderDM() {
         return `
         <article class="card dm-card ${expired ? 'expired' : ''} ${d.soldOut ? 'soldout' : ''}" data-action="${admin ? 'edit-dm' : 'view-dm'}" data-id="${esc(d.id)}" tabindex="0">
           <div class="dm-img">
-            ${img ? `<img src="${esc(img)}" alt="${esc(d.name)}" loading="lazy" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : '<span class="dm-noimg">MAD DOG</span>'}
+            ${img ? dmImgTag(d, `alt="${esc(d.name)}" loading="lazy"`) : '<span class="dm-noimg">MAD DOG</span>'}
             <span class="badge ${dmTone(d)} dm-status">${esc(dmLabel(d))}</span>
             ${expired ? '<span class="dm-ribbon">已截止</span>' : ''}
           </div>
@@ -787,12 +800,13 @@ function renderDM() {
   keepFocus(el, () => (el.innerHTML = toolbar + body));
 }
 
-// 雲端硬碟縮圖網址偶爾失效時，改用另一種網址再試一次
+// 圖片載入失敗時改用備用網址再試一次（只試一次，避免無限重試）
 document.addEventListener('error', e => {
   const img = e.target;
-  if (img.tagName !== 'IMG' || !img.dataset.file || img.dataset.retried) return;
-  img.dataset.retried = '1';
-  img.src = `https://lh3.googleusercontent.com/d/${img.dataset.file}=w1200`;
+  if (img.tagName !== 'IMG' || !img.dataset.fallback) return;
+  const next = img.dataset.fallback;
+  delete img.dataset.fallback;
+  img.src = next;
 }, true);
 
 function openDMView(id) {
@@ -800,7 +814,7 @@ function openDMView(id) {
   if (!d) return;
   const img = safeImg(d.imageUrl);
   $('#dm-view-body').innerHTML = `
-    ${img ? `<img class="dm-view-img ${isExpired(d) ? 'expired' : ''}" src="${esc(img)}" alt="${esc(d.name)}" referrerpolicy="no-referrer" data-file="${esc(d.imageFileId || '')}">` : ''}
+    ${img ? dmImgTag(d, `class="dm-view-img ${isExpired(d) ? 'expired' : ''}" alt="${esc(d.name)}"`) : ''}
     <h2>${esc(d.name)}</h2>
     <div class="dm-meta">
       <span class="badge ${dmTone(d)}">${esc(dmLabel(d))}</span>
@@ -810,10 +824,12 @@ function openDMView(id) {
   $('#dlg-dm-view').showModal();
 }
 
-function setDMPreview(src) {
-  $('#dm-preview').innerHTML = src
-    ? `<img src="${esc(src)}" alt="預覽" referrerpolicy="no-referrer">`
-    : '<span class="muted">尚未選擇圖片</span>';
+/** 編輯視窗的預覽圖：傳入 DM 資料（沿用與卡片相同的備用網址邏輯）或直接傳入圖片網址 */
+function setDMPreview(srcOrDM) {
+  const tag = !srcOrDM ? ''
+    : typeof srcOrDM === 'string' ? `<img src="${esc(srcOrDM)}" alt="預覽" referrerpolicy="no-referrer">`
+    : dmImgTag(srcOrDM, 'alt="預覽"');
+  $('#dm-preview').innerHTML = tag || '<span class="muted">尚未選擇圖片</span>';
 }
 
 function openDM(id) {
@@ -831,7 +847,7 @@ function openDM(id) {
   f.imageUrl.value = d ? d.imageUrl || '' : '';
   // 雲端硬碟上傳的圖片不顯示網址，避免誤改
   f.imageUrl.hidden = !!(d && d.imageFileId);
-  setDMPreview(d ? safeImg(d.imageUrl) : '');
+  setDMPreview(d || '');
   state.cropSource = null;
   $('#btn-recrop').hidden = true;
   $('#btn-delete-dm').hidden = !d;
