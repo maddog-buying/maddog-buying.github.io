@@ -14,7 +14,7 @@ const state = {
   selectedBatches: new Set(), // 勾選的物流單
   itemsView: 'active', batchesView: 'active', // 進行中／已完成
   mineDoneOpen: false,                        // 客人頁「已完成」區是否展開
-  dm: [], dmQ: '', dmStatus: '',
+  dm: [], dmQ: '', dmView: '現貨', cropSource: null,
   editingDM: null, dmImage: null,             // dmImage：待上傳的圖片 { data, mime, preview }
   // 搜尋與篩選（對應 data-model）
   mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
@@ -163,7 +163,7 @@ function logout() {
   if (!DEMO && window.google?.accounts?.id) google.accounts.id.disableAutoSelect();
   Object.assign(state, { user: null, mine: [], items: [], batches: [], users: [], loaded: {},
     mineQ: '', itemsQ: '', itemsStatus: '', batchesQ: '', batchesStatus: '',
-    itemsView: 'active', batchesView: 'active', mineDoneOpen: false, dm: [], dmQ: '', dmStatus: '' });
+    itemsView: 'active', batchesView: 'active', mineDoneOpen: false, dm: [], dmQ: '', dmView: '現貨' });
   state.selected.clear();
   state.selectedBatches.clear();
   $$('.tab').forEach(t => (t.innerHTML = ''));
@@ -732,9 +732,11 @@ function deadlineText(d) {
   return `${md} 截止・剩 ${days} 天`;
 }
 
+const DM_VIEWS = ['現貨', '預購', '售罄'];
+
 function dmRows() {
   return state.dm
-    .filter(d => (!state.dmStatus || d.status === state.dmStatus) && match(state.dmQ, d.name, d.status))
+    .filter(d => d.status === state.dmView && match(state.dmQ, d.name))
     .sort((a, b) => isExpired(a) - isExpired(b)
       // 未截止：期限近的在前、沒期限的在後；已截止：最近截止的在前
       || (isExpired(a) ? (b.deadline || '').localeCompare(a.deadline || '')
@@ -748,18 +750,17 @@ function renderDM() {
   const rows = dmRows();
   const counts = {};
   state.dm.forEach(d => (counts[d.status] = (counts[d.status] || 0) + 1));
+  const seg = `<div class="seg dm-seg">${DM_VIEWS.map(v => `<button type="button" data-action="set-view" data-key="dmView" data-val="${v}"
+      class="${state.dmView === v ? 'on' : ''}" aria-pressed="${state.dmView === v}">${v}<span class="count">${counts[v] || 0}</span></button>`).join('')}</div>`;
   const toolbar = `
+    ${seg}
     <div class="toolbar">
-      <input type="search" class="search" placeholder="搜尋商品" data-model="dmQ" value="${esc(state.dmQ)}">
-      <select data-model="dmStatus" class="status-filter">
-        <option value="">全部（${state.dm.length}）</option>
-        ${Object.keys(DM_TONES).map(s => `<option value="${s}" ${s === state.dmStatus ? 'selected' : ''}>${s}（${counts[s] || 0}）</option>`).join('')}
-      </select>
+      <input type="search" class="search" placeholder="搜尋${state.dmView}商品" data-model="dmQ" value="${esc(state.dmQ)}">
       <button class="btn" data-action="refresh" title="重新整理">↻</button>
       ${admin ? '<button class="btn primary" data-action="new-dm">＋ 新增 DM</button>' : ''}
     </div>`;
   const body = !state.loaded.dm ? LOADING
-    : !rows.length ? `<div class="empty"><p>${state.dm.length ? '沒有符合條件的商品' : admin ? '還沒有 DM，點「新增 DM」上架第一個商品' : '目前沒有商品 DM'}</p></div>`
+    : !rows.length ? `<div class="empty"><p>${state.dmQ ? '沒有符合條件的商品' : `目前沒有${state.dmView}商品`}</p>${admin && !state.dmQ ? '<p class="muted">點「新增 DM」上架商品</p>' : ''}</div>`
     : `<div class="dm-grid">${rows.map(d => {
         const img = safeImg(d.imageUrl);
         const expired = isExpired(d);
@@ -820,38 +821,128 @@ function openDM(id) {
   $('#dm-title').textContent = d ? '編輯 DM' : '新增 DM';
   f.name.value = d ? d.name : '';
   f.price.value = d && d.price != null ? d.price : '';
-  f.dmStatus.value = d ? d.status : '現貨';
+  f.dmStatus.value = d ? d.status : state.dmView; // 新增時預設為目前所在的分區
   f.deadline.value = d ? d.deadline || '' : '';
   f.imageUrl.value = d ? d.imageUrl || '' : '';
   // 雲端硬碟上傳的圖片不顯示網址，避免誤改
   f.imageUrl.hidden = !!(d && d.imageFileId);
   setDMPreview(d ? safeImg(d.imageUrl) : '');
+  state.cropSource = null;
+  $('#btn-recrop').hidden = true;
   $('#btn-delete-dm').hidden = !d;
   $('#dlg-dm').showModal();
   if (!d) f.name.focus();
 }
 
-/** 把選擇的圖片縮小到最長邊 1200px 並轉成 JPEG，加快上傳 */
-function compressImage(file, max = 1200, quality = 0.85) {
+function loadImage(file) {
   return new Promise((ok, no) => {
     const url = URL.createObjectURL(file);
     const img = new Image();
-    img.onload = () => {
-      const scale = Math.min(1, max / Math.max(img.width, img.height));
-      const c = document.createElement('canvas');
-      c.width = Math.round(img.width * scale);
-      c.height = Math.round(img.height * scale);
-      const ctx = c.getContext('2d');
-      ctx.fillStyle = '#000'; // 透明背景補黑色
-      ctx.fillRect(0, 0, c.width, c.height);
-      ctx.drawImage(img, 0, 0, c.width, c.height);
-      URL.revokeObjectURL(url);
-      const dataUrl = c.toDataURL('image/jpeg', quality);
-      ok({ data: dataUrl.split(',')[1], mime: 'image/jpeg', preview: dataUrl });
-    };
+    img.onload = () => { URL.revokeObjectURL(url); ok(img); };
     img.onerror = () => { URL.revokeObjectURL(url); no(new Error('無法讀取這張圖片')); };
     img.src = url;
   });
+}
+
+/**
+ * 正方形裁切器：拖曳移動、滑桿／滾輪／雙指縮放。
+ * 輸出 1200×1200 JPEG（與 DM 卡片同比例），回傳 { data, mime, preview }；取消則回傳 null。
+ */
+const Cropper = (() => {
+  const OUT = 1200;
+  const dlg = $('#dlg-crop'), canvas = $('#crop-canvas'), zoomEl = $('#crop-zoom');
+  let img = null, zoom = 1, cx = 0, cy = 0, size = 0, resolve = null;
+
+  const scale = () => Math.max(size / img.width, size / img.height) * zoom; // zoom=1 時剛好填滿框
+  function clamp() { // 圖片永遠蓋滿裁切框，不露出空白
+    const s = scale(), hw = (img.width * s - size) / 2, hh = (img.height * s - size) / 2;
+    cx = Math.min(size / 2 + hw, Math.max(size / 2 - hw, cx));
+    cy = Math.min(size / 2 + hh, Math.max(size / 2 - hh, cy));
+  }
+  function draw(ctx, k) {
+    const s = scale() * k;
+    ctx.fillStyle = '#000';
+    ctx.fillRect(0, 0, ctx.canvas.width, ctx.canvas.height);
+    ctx.imageSmoothingQuality = 'high';
+    ctx.drawImage(img, cx * k - img.width * s / 2, cy * k - img.height * s / 2, img.width * s, img.height * s);
+  }
+  function paint() {
+    const dpr = window.devicePixelRatio || 1;
+    canvas.width = canvas.height = Math.round(size * dpr);
+    draw(canvas.getContext('2d'), dpr);
+  }
+  function setZoom(z, px = size / 2, py = size / 2) { // 以 (px, py) 為中心縮放
+    const before = scale();
+    zoom = Math.min(4, Math.max(1, z));
+    const r = scale() / before;
+    cx = px - (px - cx) * r;
+    cy = py - (py - cy) * r;
+    clamp();
+    zoomEl.value = zoom;
+    paint();
+  }
+
+  const pts = new Map();
+  let pinch = null;
+  const dist = () => { const [a, b] = [...pts.values()]; return Math.hypot(a.x - b.x, a.y - b.y); };
+  const mid = () => { const [a, b] = [...pts.values()]; return { x: (a.x + b.x) / 2, y: (a.y + b.y) / 2 }; };
+  canvas.addEventListener('pointerdown', e => {
+    canvas.setPointerCapture(e.pointerId);
+    pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    if (pts.size === 2) pinch = { d: dist(), z: zoom };
+  });
+  canvas.addEventListener('pointermove', e => {
+    const p = pts.get(e.pointerId);
+    if (!p) return;
+    if (pts.size === 1) { cx += e.offsetX - p.x; cy += e.offsetY - p.y; clamp(); paint(); }
+    pts.set(e.pointerId, { x: e.offsetX, y: e.offsetY });
+    if (pts.size === 2 && pinch) { const m = mid(); setZoom(pinch.z * dist() / pinch.d, m.x, m.y); }
+  });
+  const up = e => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; };
+  canvas.addEventListener('pointerup', up);
+  canvas.addEventListener('pointercancel', up);
+  canvas.addEventListener('wheel', e => { e.preventDefault(); setZoom(zoom * (e.deltaY < 0 ? 1.08 : 1 / 1.08), e.offsetX, e.offsetY); }, { passive: false });
+  zoomEl.addEventListener('input', () => setZoom(+zoomEl.value));
+
+  function finish(result) {
+    const r = resolve;
+    resolve = null;
+    if (dlg.open) dlg.close();
+    if (r) r(result);
+  }
+  $('#crop-cancel').addEventListener('click', () => finish(null));
+  $('#crop-ok').addEventListener('click', () => {
+    const out = document.createElement('canvas');
+    out.width = out.height = OUT;
+    draw(out.getContext('2d'), OUT / size);
+    const dataUrl = out.toDataURL('image/jpeg', 0.86);
+    finish({ data: dataUrl.split(',')[1], mime: 'image/jpeg', preview: dataUrl });
+  });
+  dlg.addEventListener('close', () => finish(null)); // Esc 等方式關閉也視為取消
+
+  return {
+    open(image) {
+      img = image;
+      zoom = 1;
+      zoomEl.value = 1;
+      dlg.showModal();
+      size = canvas.parentElement.clientWidth;
+      cx = cy = size / 2;
+      paint();
+      return new Promise(r => (resolve = r));
+    },
+  };
+})();
+
+async function cropAndUse(image) {
+  const r = await Cropper.open(image);
+  if (!r) return;
+  state.dmImage = r;
+  setDMPreview(r.preview);
+  const f = $('#form-dm');
+  f.imageUrl.value = '';
+  f.imageUrl.hidden = true;
+  $('#btn-recrop').hidden = false;
 }
 
 $('#dm-file').addEventListener('change', async e => {
@@ -859,11 +950,8 @@ $('#dm-file').addEventListener('change', async e => {
   e.target.value = '';
   if (!file) return;
   try {
-    state.dmImage = await compressImage(file);
-    setDMPreview(state.dmImage.preview);
-    const f = $('#form-dm');
-    f.imageUrl.value = '';
-    f.imageUrl.hidden = true;
+    state.cropSource = await loadImage(file);
+    await cropAndUse(state.cropSource);
   } catch (err) { fail(err); }
 });
 
@@ -1018,6 +1106,7 @@ document.addEventListener('click', async e => {
       const key = el.dataset.key;
       if (state[key] === el.dataset.val) return;
       state[key] = el.dataset.val;
+      if (key === 'dmView') state.dmQ = '';
       if (key === 'itemsView') { state.itemsStatus = ''; state.selected.clear(); }
       if (key === 'batchesView') { state.batchesStatus = ''; state.selectedBatches.clear(); }
       return render();
@@ -1123,8 +1212,11 @@ document.addEventListener('click', async e => {
     case 'new-dm': return openDM(null);
     case 'edit-dm': return openDM(id);
     case 'view-dm': return openDMView(id);
+    case 'dm-recrop': return state.cropSource && cropAndUse(state.cropSource);
     case 'dm-clear-image': {
       state.dmImage = null;
+      state.cropSource = null;
+      $('#btn-recrop').hidden = true;
       const f = $('#form-dm');
       f.imageUrl.value = '';
       f.imageUrl.hidden = false;
@@ -1209,7 +1301,7 @@ document.addEventListener('toggle', e => {
 }, true);
 
 // 點對話框外圍關閉
-$$('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d) d.close(); }));
+$$('dialog').forEach(d => d.addEventListener('click', e => { if (e.target === d && !d.hasAttribute('data-strict')) d.close(); }));
 
 // 回到前景時自動更新
 document.addEventListener('visibilitychange', () => {

@@ -135,6 +135,7 @@
           <div id="dm-preview" class="dm-preview"><span class="muted">尚未選擇圖片</span></div>
           <div class="dm-image-actions">
             <label class="btn sm file-btn">選擇圖片<input type="file" id="dm-file" accept="image/*" hidden></label>
+            <button type="button" class="btn sm" data-action="dm-recrop" id="btn-recrop" hidden>重新裁切</button>
             <button type="button" class="btn sm ghost" data-action="dm-clear-image">移除圖片</button>
           </div>
           <input name="imageUrl" type="url" placeholder="或貼上圖片網址（https://…）" autocomplete="off">
@@ -158,6 +159,25 @@
         <button class="btn primary" value="ok" id="btn-save-dm">儲存</button>
       </div>
     </form>
+  </dialog>
+
+  <!-- 管理者：裁切圖片 -->
+  <dialog id="dlg-crop" class="dialog crop-dialog" data-strict>
+    <h2>裁切圖片</h2>
+    <p class="hint">拖曳移動畫面，用滑桿、滑鼠滾輪或雙指縮放。框內就是客人看到的樣子。</p>
+    <div class="crop-stage">
+      <canvas id="crop-canvas" aria-label="裁切區域"></canvas>
+      <div class="crop-grid" aria-hidden="true"></div>
+    </div>
+    <div class="crop-zoom">
+      <span aria-hidden="true">－</span>
+      <input type="range" id="crop-zoom" min="1" max="4" step="0.01" value="1" aria-label="縮放">
+      <span aria-hidden="true">＋</span>
+    </div>
+    <div class="dlg-actions">
+      <button type="button" class="btn ghost" id="crop-cancel">取消</button>
+      <button type="button" class="btn primary" id="crop-ok">確定裁切</button>
+    </div>
   </dialog>
 
   <!-- 客人：DM 大圖 -->
